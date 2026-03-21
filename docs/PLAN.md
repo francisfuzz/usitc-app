@@ -19,7 +19,7 @@ Everything runs inside a single image built from `Dockerfile`. The `data/` folde
 alias hts-run='docker run --rm -v "$(pwd)/data:/app/data" hts-local'
 
 # Run the MCP server (stays alive, stdio transport)
-alias hts-mcp='docker run --rm -i -v "$(pwd)/data:/app/data" hts-local python mcp_server.py'
+alias hts-mcp='docker run --rm -i -v "$(pwd)/data:/app/data" hts-local mcp_server.py'
 ```
 
 After that, every interaction in this plan is just `hts-run <command>`. No `python`, no `pip`, no virtualenv — ever.

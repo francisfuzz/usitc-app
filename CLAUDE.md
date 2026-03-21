@@ -24,7 +24,7 @@ All development runs in Docker. No Python, pip, or virtualenv required on the ho
 |------|---------|
 | `scripts/ingest.py` | Download HTS data from API, iterate chapters 01-99, parse JSON, insert into SQLite |
 | `scripts/refresh.py` | Detect HTS data changes via content-hash probe, re-ingest if changed |
-| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter` commands |
+| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter`, `chapters` commands |
 | `mcp_server.py` | Expose four tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters` |
 
 ### Key Patterns
@@ -71,7 +71,7 @@ docker run --rm -i -v "$(pwd)/data:/app/data" hts-local mcp_server.py
 docker run --rm hts-local -m pytest tests/ -v
 ```
 
-The test suite (35 tests) covers CLI commands, MCP server tools, and edge cases using an in-memory SQLite fixture. No real database or API access needed.
+The test suite covers CLI commands, MCP server tools, and edge cases using an in-memory SQLite fixture. No real database or API access needed.
 
 ### Testing a Command Locally (without Docker)
 If you have Python 3.12+ installed:
@@ -114,7 +114,7 @@ python -c "import sqlite3; db = sqlite3.connect('data/hts.db'); print(db.execute
 ### Verify Data Integrity
 ```bash
 # Count entries by chapter
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python -c "
+docker run --rm -v "$(pwd)/data:/app/data" hts-local -c "
 import sqlite3
 db = sqlite3.connect('data/hts.db')
 result = db.execute('SELECT COUNT(*) FROM hts_entries').fetchone()[0]
