@@ -24,7 +24,7 @@ All development runs in Docker. No Python, pip, or virtualenv required on the ho
 |------|---------|
 | `scripts/ingest.py` | Download HTS data from API, iterate chapters 01-99, parse JSON, insert into SQLite |
 | `scripts/refresh.py` | Detect HTS data changes via content-hash probe, re-ingest if changed |
-| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter` commands |
+| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter`, `chapters` commands |
 | `mcp_server.py` | Expose four tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters` |
 
 ### Key Patterns
@@ -45,25 +45,25 @@ docker build -t hts-local .
 
 **Ingest data (if `data/hts.db` doesn't exist):**
 ```bash
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/ingest.py
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
 ```
 
 **CLI usage (after ingest):**
 ```bash
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py search "copper wire"
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py code 7408.11
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py chapter 74
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py --help
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py search "copper wire"
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py code 7408.11
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapter 74
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py --help
 ```
 
 **Refresh data (check for updates and re-ingest if changed):**
 ```bash
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/refresh.py
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
 ```
 
 **MCP server (stdio, for Claude Desktop integration):**
 ```bash
-docker run --rm -i -v "$(pwd)/data:/app/data" hts-local python mcp_server.py
+docker run --rm -i -v "$(pwd)/data:/app/data" hts-local mcp_server.py
 ```
 
 ### Running Tests
@@ -71,7 +71,7 @@ docker run --rm -i -v "$(pwd)/data:/app/data" hts-local python mcp_server.py
 docker run --rm hts-local -m pytest tests/ -v
 ```
 
-The test suite (35 tests) covers CLI commands, MCP server tools, and edge cases using an in-memory SQLite fixture. No real database or API access needed.
+The test suite covers CLI commands, MCP server tools, and edge cases using an in-memory SQLite fixture. No real database or API access needed.
 
 ### Testing a Command Locally (without Docker)
 If you have Python 3.12+ installed:
@@ -108,13 +108,13 @@ python -c "import sqlite3; db = sqlite3.connect('data/hts.db'); print(db.execute
 
 ### Update the SQLite Schema
 1. Edit `create_schema()` in `scripts/ingest.py`
-2. Re-run ingest to rebuild: `docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/ingest.py` (will recreate tables)
+2. Re-run ingest to rebuild: `docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py` (will recreate tables)
 3. Update column references in formatting functions if needed
 
 ### Verify Data Integrity
 ```bash
 # Count entries by chapter
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python -c "
+docker run --rm -v "$(pwd)/data:/app/data" hts-local -c "
 import sqlite3
 db = sqlite3.connect('data/hts.db')
 result = db.execute('SELECT COUNT(*) FROM hts_entries').fetchone()[0]
@@ -122,7 +122,7 @@ print(f'Total entries: {result}')
 "
 
 # Quick smoke test
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py code 0101.21.00
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py code 0101.21.00
 ```
 
 ## API & Data Notes
@@ -161,7 +161,7 @@ To use the HTS tools in Claude Desktop:
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/usitc-app/data:/app/data",
         "hts-local",
-        "python", "mcp_server.py"
+        "mcp_server.py"
       ]
     }
   }
