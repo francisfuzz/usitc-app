@@ -133,6 +133,49 @@ def test_chapter_sorted_by_hts_code(test_db):
     assert codes == sorted(codes)
 
 
+# --- chapters command ---
+
+
+def test_chapters_returns_all(test_db):
+    """Lists all chapters with descriptions and entry counts."""
+    result = runner.invoke(app, ["chapters"])
+    assert result.exit_code == 0
+    assert "01" in result.output
+    assert "07" in result.output
+    assert "74" in result.output
+
+
+def test_chapters_json_output(test_db):
+    """JSON output returns list with number, description, entry_count."""
+    result = runner.invoke(app, ["chapters", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert isinstance(data, list)
+    assert len(data) == 3  # 3 chapters in fixture
+    for ch in data:
+        assert "number" in ch
+        assert "description" in ch
+        assert "entry_count" in ch
+
+
+def test_chapters_entry_counts_accurate(test_db):
+    """Entry counts match the actual number of entries per chapter."""
+    result = runner.invoke(app, ["chapters", "--json"])
+    data = json.loads(result.output)
+    counts = {ch["number"]: ch["entry_count"] for ch in data}
+    assert counts["01"] == 4
+    assert counts["07"] == 6
+    assert counts["74"] == 6
+
+
+def test_chapters_sorted_by_number(test_db):
+    """Chapters are sorted by number."""
+    result = runner.invoke(app, ["chapters", "--json"])
+    data = json.loads(result.output)
+    numbers = [ch["number"] for ch in data]
+    assert numbers == sorted(numbers)
+
+
 # --- edge cases ---
 
 

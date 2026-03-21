@@ -196,5 +196,43 @@ def chapter(
         db.close()
 
 
+@app.command()
+def chapters(
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON")
+) -> None:
+    """List all chapters with descriptions and entry counts."""
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute(
+            """SELECT c.number, c.description, COUNT(h.id) as entry_count
+               FROM chapters c
+               LEFT JOIN hts_entries h ON c.id = h.chapter_id
+               GROUP BY c.id
+               ORDER BY c.number"""
+        )
+        rows = cursor.fetchall()
+
+        if json_output:
+            results = [
+                {"number": r[0], "description": r[1] or "", "entry_count": r[2]}
+                for r in rows
+            ]
+            print(json.dumps(results, indent=2))
+        else:
+            table = Table(title=f"HTS Chapters ({len(rows)} chapters)")
+            table.add_column("Chapter", style="cyan")
+            table.add_column("Description", style="green")
+            table.add_column("Entries", style="magenta", justify="right")
+
+            for number, description, entry_count in rows:
+                table.add_row(number, description or "", str(entry_count))
+
+            console.print(table)
+
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()
