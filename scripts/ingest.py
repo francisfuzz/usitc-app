@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Download HTS schedule from API and load into SQLite."""
+"""Download complete HTS schedule from API and load into SQLite."""
 
 import sqlite3
 import requests
 import sys
 import os
+import json
 
 
 def create_schema(db):
@@ -14,7 +15,7 @@ def create_schema(db):
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chapters (
         id          INTEGER PRIMARY KEY,
-        number      TEXT NOT NULL,
+        number      TEXT NOT NULL UNIQUE,
         description TEXT
     )
     """)
@@ -22,13 +23,14 @@ def create_schema(db):
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS hts_entries (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        hts_code        TEXT NOT NULL,
+        hts_code        TEXT NOT NULL UNIQUE,
         indent          INTEGER,
         description     TEXT,
         unit            TEXT,
         general_rate    TEXT,
         special_rate    TEXT,
         column2_rate    TEXT,
+        footnotes       TEXT,
         chapter_id      INTEGER REFERENCES chapters(id)
     )
     """)
@@ -43,118 +45,100 @@ def create_schema(db):
     db.commit()
 
 
-def fetch_hts_data_via_search():
-    """Fetch HTS data using the search API with broad keywords."""
-    # Start with broad searches to get a comprehensive sample
-    keywords = [
-        "copper", "iron", "steel", "aluminum", "nickel", "titanium", "zinc",
-        "wire", "rod", "bar", "plate", "sheet", "pipe", "tube",
-        "live animals", "meat", "fish", "vegetables", "fruit", "coffee", "tea",
-        "textiles", "clothing", "footwear", "leather",
-        "machinery", "vehicles", "electrical", "optical",
-        "plastics", "rubber", "paper", "wood",
-        "ceramic", "glass", "stone", "minerals"
-    ]
+def fetch_and_ingest_chapter(db, chapter_num: int) -> tuple:
+    """Fetch a chapter from API and insert into database."""
+    try:
+        chapter_str = f"{chapter_num:02d}"
+        url = f"https://hts.usitc.gov/reststop/search?keyword=chapter%20{chapter_str}&limit=5000"
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
 
-    all_entries = {}
+        if not isinstance(data, list):
+            print(f"Warning: Chapter {chapter_str} returned non-list", file=sys.stderr)
+            return 0, 0
 
-    for keyword in keywords:
-        try:
-            url = f"https://hts.usitc.gov/reststop/search?keyword={keyword}"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+        cursor = db.cursor()
 
-            results = response.json()
-            if isinstance(results, list):
-                for entry in results:
-                    # Use htsno as unique key
-                    htsno = entry.get("htsno", "").strip()
-                    if htsno and htsno not in all_entries:
-                        all_entries[htsno] = entry
-        except Exception as e:
-            print(f"Warning: Failed to fetch keyword '{keyword}': {e}", file=sys.stderr)
-            continue
+        # Insert chapter
+        cursor.execute(
+            "INSERT OR IGNORE INTO chapters (number, description) VALUES (?, ?)",
+            (chapter_str, f"Chapter {chapter_str}")
+        )
 
-    return all_entries
-
-
-def ingest_data(db, entries_dict):
-    """Parse search results and insert into database."""
-    cursor = db.cursor()
-
-    chapters_inserted = set()
-    entries_inserted = 0
-
-    for htsno, entry in entries_dict.items():
-        # Extract chapter from HTS code (first 2 digits)
-        hts_code = entry.get("htsno")
-        if not hts_code:
-            continue
-        hts_code = str(hts_code).strip()
-        if not hts_code or len(hts_code) < 2:
-            continue
-
-        chapter_number = hts_code[:2]
-
-        # Insert chapter if not already done
-        if chapter_number not in chapters_inserted:
-            description = f"Chapter {chapter_number}"
-            cursor.execute(
-                "INSERT OR IGNORE INTO chapters (number, description) VALUES (?, ?)",
-                (chapter_number, description)
-            )
-            chapters_inserted.add(chapter_number)
-
-        # Get the chapter id for foreign key
-        cursor.execute("SELECT id FROM chapters WHERE number = ?", (chapter_number,))
+        # Get chapter id
+        cursor.execute("SELECT id FROM chapters WHERE number = ?", (chapter_str,))
         chapter_row = cursor.fetchone()
         chapter_id = chapter_row[0] if chapter_row else None
 
-        # Extract rate information - handle None values
-        general_rate = entry.get("general") or ""
-        if general_rate:
-            general_rate = str(general_rate).strip()
-        special_rate = entry.get("special") or ""
-        if special_rate:
-            special_rate = str(special_rate).strip()
-        other_rate = entry.get("other") or ""
-        if other_rate:
-            other_rate = str(other_rate).strip()
+        entries_inserted = 0
+        duplicates_skipped = 0
 
-        description = entry.get("description") or ""
-        if description:
-            description = str(description).strip()
+        for entry in data:
+            hts_code = entry.get("htsno")
+            if not hts_code:
+                continue
 
-        indent_val = entry.get("indent", 0)
-        if isinstance(indent_val, str):
-            indent = int(indent_val) if indent_val.isdigit() else 0
-        else:
-            indent = int(indent_val) if indent_val else 0
+            hts_code = str(hts_code).strip()
 
-        # Get unit from units array if present
-        units = entry.get("units")
-        unit = ""
-        if isinstance(units, list) and units:
-            unit = str(units[0]).strip() if units[0] else ""
+            description = entry.get("description") or ""
+            if description:
+                description = str(description).strip()
 
-        cursor.execute(
-            """INSERT INTO hts_entries
-               (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, chapter_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (hts_code, indent, description, unit, general_rate, special_rate, other_rate, chapter_id)
-        )
-        entries_inserted += 1
+            indent_val = entry.get("indent", 0)
+            if isinstance(indent_val, str):
+                indent = int(indent_val) if indent_val.isdigit() else 0
+            else:
+                indent = int(indent_val) if indent_val else 0
 
-    db.commit()
-    return entries_inserted, len(chapters_inserted)
+            units = entry.get("units")
+            unit = ""
+            if isinstance(units, list) and units:
+                unit = str(units[0]).strip() if units[0] else ""
+
+            general_rate = entry.get("general") or ""
+            if general_rate:
+                general_rate = str(general_rate).strip()
+
+            special_rate = entry.get("special") or ""
+            if special_rate:
+                special_rate = str(special_rate).strip()
+
+            column2_rate = entry.get("other") or ""
+            if column2_rate:
+                column2_rate = str(column2_rate).strip()
+
+            footnotes_data = entry.get("footnotes")
+            footnotes_str = ""
+            if footnotes_data:
+                try:
+                    footnotes_str = json.dumps(footnotes_data)
+                except (TypeError, ValueError):
+                    pass
+
+            try:
+                cursor.execute(
+                    """INSERT INTO hts_entries
+                       (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes, chapter_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes_str, chapter_id)
+                )
+                entries_inserted += 1
+            except sqlite3.IntegrityError:
+                duplicates_skipped += 1
+
+        db.commit()
+        return entries_inserted, duplicates_skipped
+
+    except Exception as e:
+        print(f"Error with chapter {chapter_num:02d}: {e}", file=sys.stderr)
+        return 0, 0
 
 
 def main():
     """Main ingest routine."""
-    # Ensure data directory exists
     os.makedirs("data", exist_ok=True)
 
-    # Connect to database
     db_path = "data/hts.db"
     db = sqlite3.connect(db_path)
 
@@ -162,18 +146,24 @@ def main():
         print("Creating database schema...")
         create_schema(db)
 
-        print("Fetching HTS data from API...")
-        data = fetch_hts_data_via_search()
+        print("Fetching and ingesting HTS data from all 99 chapters...")
 
-        if not data:
-            print("Warning: No data retrieved from API", file=sys.stderr)
-            print("Loaded 0 entries across 0 chapters")
-            return
+        total_entries = 0
+        total_chapters_done = 0
+        total_duplicates = 0
 
-        print(f"Fetched {len(data)} entries, ingesting...")
-        entries_count, chapters_count = ingest_data(db, data)
+        for ch in range(1, 100):
+            entries, duplicates = fetch_and_ingest_chapter(db, ch)
+            total_entries += entries
+            total_chapters_done += 1
+            total_duplicates += duplicates
 
-        print(f"Loaded {entries_count} entries across {chapters_count} chapters")
+            if ch % 10 == 0:
+                print(f"  Completed {ch}/99 chapters ({total_entries} entries loaded so far)...")
+
+        print(f"Loaded {total_entries} entries across 99 chapters")
+        if total_duplicates > 0:
+            print(f"(Skipped {total_duplicates} duplicate HTS codes)")
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
