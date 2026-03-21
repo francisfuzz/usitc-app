@@ -66,14 +66,14 @@ def search(
 
         if not rows:
             if json_output:
-                console.print(json.dumps([]))
+                print(json.dumps([]))
             else:
                 console.print(f"[yellow]No results found for '{keyword}'[/yellow]")
             return
 
         if json_output:
             results = [format_entry_as_dict(row) for row in rows]
-            console.print(json.dumps(results, indent=2))
+            print(json.dumps(results, indent=2))
         else:
             table = Table(title=f"Search results for '{keyword}'")
             table.add_column("HTS Code", style="cyan")
@@ -112,14 +112,14 @@ def code(
 
         if not row:
             if json_output:
-                console.print(json.dumps(None))
+                print(json.dumps(None))
             else:
                 console.print(f"[yellow]HTS code '{hts_code}' not found[/yellow]")
             return
 
         if json_output:
             result = format_entry_as_dict(row)
-            console.print(json.dumps(result, indent=2))
+            print(json.dumps(result, indent=2))
         else:
             table = Table(title=f"HTS Code: {hts_code}")
             table.add_column("Field", style="cyan")
@@ -171,14 +171,14 @@ def chapter(
 
         if not rows:
             if json_output:
-                console.print(json.dumps([]))
+                print(json.dumps([]))
             else:
                 console.print(f"[yellow]No entries found for chapter {chapter_num}[/yellow]")
             return
 
         if json_output:
             results = [format_entry_as_dict(row) for row in rows]
-            console.print(json.dumps(results, indent=2))
+            print(json.dumps(results, indent=2))
         else:
             table = Table(title=f"Chapter {chapter_num} ({len(rows)} entries)")
             table.add_column("HTS Code", style="cyan")
