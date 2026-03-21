@@ -1,0 +1,4 @@
+requests
+mcp
+typer
+rich
