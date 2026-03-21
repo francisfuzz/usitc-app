@@ -6,7 +6,7 @@ Three ways to use it:
 
 | Interface | Best for |
 |-----------|----------|
-| **CLI** | Quick terminal lookups (`search`, `code`, `chapter`) |
+| **CLI** | Quick terminal lookups (`search`, `code`, `chapter`, `chapters`) |
 | **MCP Server** | Giving AI agents (like Claude) access to tariff data |
 | **Python directly** | Development without Docker |
 
@@ -55,7 +55,7 @@ This installs all Python dependencies inside the container. You only need to do 
 The first run fetches all 99 chapters from the USITC public API and stores them in a local SQLite database. This takes about 15-20 seconds and requires an internet connection.
 
 ```bash
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/ingest.py
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
 ```
 
 You should see output like:
@@ -74,22 +74,25 @@ The data is saved to `data/hts.db` on your machine. You won't need to run this a
 
 ```bash
 # Search for products by keyword
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py search "copper wire"
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py search "copper wire"
 
 # Look up a specific tariff code
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py code 7408.11.30
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py code 7408.11.30
 
 # List all entries in a chapter
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py chapter 74
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapter 74
+
+# List all 99 chapters with entry counts
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapters
 
 # See all available commands
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py --help
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py --help
 ```
 
 Every command supports a `--json` flag for machine-readable output:
 
 ```bash
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py search "titanium" --json
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py search "titanium" --json
 ```
 
 ---
@@ -119,6 +122,7 @@ python scripts/ingest.py
 python hts.py search "copper wire"
 python hts.py code 7408.11.30
 python hts.py chapter 74
+python hts.py chapters
 ```
 
 ---
@@ -165,7 +169,7 @@ If the file doesn't exist, create it. Add the `hts` server entry, replacing `/ab
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/usitc-app/data:/app/data",
         "hts-local",
-        "python", "mcp_server.py"
+        "mcp_server.py"
       ]
     }
   }
@@ -207,7 +211,7 @@ Claude will call the appropriate HTS tool and return the tariff data from your l
 - Restart Claude Desktop after any config change
 
 **"hts.db not found" error in Claude's response:**
-- Run the ingest step: `docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/ingest.py`
+- Run the ingest step: `docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py`
 
 **Docker container errors:**
 - Rebuild the image: `docker build -t hts-local .`
@@ -221,7 +225,7 @@ The tariff schedule is updated periodically by the USITC. To check for updates a
 
 ```bash
 # Docker
-docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/refresh.py
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
 
 # Without Docker
 python scripts/refresh.py
@@ -249,7 +253,7 @@ The test suite uses an in-memory SQLite database with fixture data — no intern
 
 ```
 usitc-app/
-├── hts.py              # CLI: search, code, chapter commands
+├── hts.py              # CLI: search, code, chapter, chapters commands
 ├── mcp_server.py       # MCP server: 4 tools, stdio transport
 ├── scripts/
 │   ├── ingest.py       # Download + load all 99 chapters into SQLite
