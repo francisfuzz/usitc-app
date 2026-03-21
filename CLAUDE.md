@@ -23,13 +23,16 @@ All development runs in Docker. No Python, pip, or virtualenv required on the ho
 | File | Purpose |
 |------|---------|
 | `scripts/ingest.py` | Download HTS data from API, iterate chapters 01-99, parse JSON, insert into SQLite |
+| `scripts/refresh.py` | Detect HTS data changes via content-hash probe, re-ingest if changed |
 | `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter` commands |
 | `mcp_server.py` | Expose four tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters` |
 
 ### Key Patterns
 - **Database connections:** Each command opens/closes a connection in a try-finally block. No connection pooling needed for CLI/MCP (low concurrency).
-- **Formatting:** Three helper functions in `hts.py` (`format_entry_as_dict`, `format_entry_for_table`) standardize output across CLI table views and JSON responses.
+- **Formatting:** Two helper functions in `hts.py` (`format_entry_as_dict`, `format_entry_for_table`) standardize output across CLI table views and JSON responses.
+- **JSON output:** CLI uses `print()` (not Rich `console.print()`) for all JSON output to avoid ANSI control character injection. Rich is only used for table display.
 - **MCP tools:** Return JSON strings (not objects), matching MCP SDK conventions. Tool docstrings are exposed as help text to Claude.
+- **Revision detection:** `scripts/refresh.py` hashes a probe chapter (01) response and compares against `data/last_revision.txt`. Since `/reststop/releases` returns 404, this content-hash approach is the alternative.
 
 ## Running & Development
 
@@ -53,10 +56,22 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py chapter 74
 docker run --rm -v "$(pwd)/data:/app/data" hts-local python hts.py --help
 ```
 
+**Refresh data (check for updates and re-ingest if changed):**
+```bash
+docker run --rm -v "$(pwd)/data:/app/data" hts-local python scripts/refresh.py
+```
+
 **MCP server (stdio, for Claude Desktop integration):**
 ```bash
 docker run --rm -i -v "$(pwd)/data:/app/data" hts-local python mcp_server.py
 ```
+
+### Running Tests
+```bash
+docker run --rm hts-local -m pytest tests/ -v
+```
+
+The test suite (35 tests) covers CLI commands, MCP server tools, and edge cases using an in-memory SQLite fixture. No real database or API access needed.
 
 ### Testing a Command Locally (without Docker)
 If you have Python 3.12+ installed:
@@ -79,7 +94,9 @@ python -c "import sqlite3; db = sqlite3.connect('data/hts.db'); print(db.execute
 1. Add a `@app.command()` function in `hts.py`
 2. Use `typer.Argument()` for positional args, `typer.Option()` for flags
 3. Follow the pattern: connect to DB → execute query → format output (JSON or table) → close DB
-4. Update the table schema in both `format_entry_for_table` and `format_entry_as_dict` if querying new columns
+4. For `--json` output, use `print()` — never `console.print()` (Rich injects control characters)
+5. Update the table schema in both `format_entry_for_table` and `format_entry_as_dict` if querying new columns
+6. Add corresponding tests in `tests/test_cli.py`
 
 ### Add a New MCP Tool
 1. Add a `@mcp.tool()` function in `mcp_server.py`
@@ -87,6 +104,7 @@ python -c "import sqlite3; db = sqlite3.connect('data/hts.db'); print(db.execute
 3. Always return a JSON string (`json.dumps()`)
 4. Follow the DB pattern: open → execute → format → close
 5. Handle errors gracefully (return JSON error object, don't raise)
+6. Add corresponding tests in `tests/test_mcp.py`
 
 ### Update the SQLite Schema
 1. Edit `create_schema()` in `scripts/ingest.py`
@@ -125,7 +143,10 @@ Each `hts_entries` row contains:
 - `indent` — hierarchy level (0 = chapter, 1 = heading, etc.)
 - `unit` — measurement unit (e.g., "kg", "liters")
 - `general_rate`, `special_rate`, `column2_rate` — duty rates (strings like "5%", "Free")
+- `footnotes` — JSON string of footnote objects (may be empty string)
 - `chapter_id` — foreign key to `chapters` table
+
+Note: The CLI SELECT queries omit `footnotes` — the `format_entry_as_dict` column list has 9 columns. The MCP server queries 6 columns (no `id`, `indent`, `footnotes`, `chapter_id`).
 
 ## MCP Server Integration (Claude Desktop)
 
@@ -149,12 +170,13 @@ To use the HTS tools in Claude Desktop:
 
 The server uses stdio transport (no port exposed). Claude Desktop spawns the container, communicates over stdin/stdout, and the container exits cleanly when the session ends.
 
-## Known Limitations & TODOs
+## Known Limitations
 
 - **Single-threaded CLI** — no parallel queries; acceptable for interactive lookups
 - **No pagination in CLI search** — hardcoded limit of 10 results; use `--limit` flag to increase
-- **No revision tracking** — `scripts/refresh.py` not yet implemented; manually re-run ingest to update data
 - **No full-text search** — uses simple LIKE queries; could upgrade to SQLite FTS5 for better relevance
+- **Revision detection is approximate** — `scripts/refresh.py` probes chapter 01 only; a change in another chapter without a chapter 01 change would be missed
+- **`format_entry_as_dict` column mapping** — uses positional `zip` against hardcoded column names; fragile if the SELECT changes. Consider using `cursor.description` or named tuples.
 
 ## Debugging
 
