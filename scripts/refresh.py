@@ -11,6 +11,7 @@ If the data has changed (or no previous hash exists), it runs a full re-ingest.
 import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -78,16 +79,28 @@ def main():
         print(f"Data changed (old: {stored_hash[:12]}... new: {current_hash[:12]}...)")
         print("Running re-ingest...")
 
-    # Remove old database so ingest creates fresh tables
+    # Back up existing database before re-ingesting
     db_path = DATA_DIR / "hts.db"
-    if db_path.exists():
+    backup_path = DATA_DIR / "hts.db.backup"
+    had_existing_db = db_path.exists()
+
+    if had_existing_db:
+        print(f"Backing up existing database to {backup_path}...")
+        shutil.copy2(str(db_path), str(backup_path))
         db_path.unlink()
 
     exit_code = run_ingest()
     if exit_code != 0:
         print("Ingest failed!", file=sys.stderr)
+        # Restore from backup if available
+        if had_existing_db and backup_path.exists():
+            print("Restoring database from backup...", file=sys.stderr)
+            shutil.copy2(str(backup_path), str(db_path))
         sys.exit(exit_code)
 
+    # Success — remove backup and save new hash
+    if backup_path.exists():
+        backup_path.unlink()
     save_hash(current_hash)
     print(f"Refresh complete. Revision hash: {current_hash[:12]}...")
 
