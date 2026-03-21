@@ -14,25 +14,26 @@ All development runs in Docker. No Python, pip, or virtualenv required on the ho
 
 ### Data Layer
 - **Source:** https://hts.usitc.gov/reststop/ (public government API, no auth required)
-- **Schema:** Two tables in `data/hts.db`:
-  - `chapters` — HTS chapters (01-99), with descriptions and counts
+- **Schema:** Three tables in `data/hts.db`:
+  - `chapters` — HTS chapters (01-99), with descriptions, content hashes, and freshness timestamps (`last_checked_at`, `last_changed_at`)
   - `hts_entries` — ~134K tariff entries with rates, units, indent level, footnotes
+  - `data_freshness` — records of each refresh run (timestamp, duration, chapters changed)
 - **Indexes:** `hts_code` (exact lookups), `description` (substring search)
 
 ### Application Layer
 | File | Purpose |
 |------|---------|
 | `scripts/ingest.py` | Download HTS data from API, iterate chapters 01-99, parse JSON, insert into SQLite |
-| `scripts/refresh.py` | Detect HTS data changes via content-hash probe, re-ingest if changed |
-| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter`, `chapters` commands |
-| `mcp_server.py` | Expose four tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters` |
+| `scripts/refresh.py` | Detect HTS data changes by hashing all 99 chapters in parallel, re-ingest if changed, track per-chapter freshness |
+| `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter`, `chapters`, `info` commands |
+| `mcp_server.py` | Expose five tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters`, `get_data_freshness` |
 
 ### Key Patterns
 - **Database connections:** Each command opens/closes a connection in a try-finally block. No connection pooling needed for CLI/MCP (low concurrency).
 - **Formatting:** Two helper functions in `hts.py` (`format_entry_as_dict`, `format_entry_for_table`) standardize output across CLI table views and JSON responses.
 - **JSON output:** CLI uses `print()` (not Rich `console.print()`) for all JSON output to avoid ANSI control character injection. Rich is only used for table display.
 - **MCP tools:** Return JSON strings (not objects), matching MCP SDK conventions. Tool docstrings are exposed as help text to Claude.
-- **Revision detection:** `scripts/refresh.py` hashes a probe chapter (01) response and compares against `data/last_revision.txt`. Since `/reststop/releases` returns 404, this content-hash approach is the alternative.
+- **Revision detection:** `scripts/refresh.py` hashes all 99 chapters in parallel (`ThreadPoolExecutor`) and compares against stored hashes in the `chapters` table. Since `/reststop/releases` returns 404, this content-hash approach is the alternative. Per-chapter `last_checked_at` and `last_changed_at` timestamps distinguish "we looked" from "it was different."
 
 ## Running & Development
 
@@ -53,6 +54,8 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
 docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py search "copper wire"
 docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py code 7408.11
 docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapter 74
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py info
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py info --chapter 74
 docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py --help
 ```
 
@@ -175,7 +178,7 @@ The server uses stdio transport (no port exposed). Claude Desktop spawns the con
 - **Single-threaded CLI** — no parallel queries; acceptable for interactive lookups
 - **No pagination in CLI search** — hardcoded limit of 10 results; use `--limit` flag to increase
 - **No full-text search** — uses simple LIKE queries; could upgrade to SQLite FTS5 for better relevance
-- **Revision detection is approximate** — `scripts/refresh.py` probes chapter 01 only; a change in another chapter without a chapter 01 change would be missed
+- **Revision detection is content-hash based** — `scripts/refresh.py` hashes all 99 chapters to detect changes, but cannot distinguish USITC revision numbers (the API provides none)
 - **`format_entry_as_dict` column mapping** — uses positional `zip` against hardcoded column names; fragile if the SELECT changes. Consider using `cursor.description` or named tuples.
 
 ## Debugging

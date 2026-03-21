@@ -234,5 +234,91 @@ def chapters(
         db.close()
 
 
+@app.command()
+def info(
+    chapter_num: Optional[str] = typer.Option(None, "--chapter", "-c", help="Show details for a specific chapter"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON")
+) -> None:
+    """Show data freshness and revision metadata."""
+    db = get_db()
+    try:
+        cursor = db.cursor()
+
+        if chapter_num:
+            chapter_num = chapter_num.zfill(2)
+            cursor.execute(
+                """SELECT c.number, c.description, c.last_checked_at, c.last_changed_at,
+                          COUNT(h.id) as entry_count
+                   FROM chapters c
+                   LEFT JOIN hts_entries h ON c.id = h.chapter_id
+                   WHERE c.number = ?
+                   GROUP BY c.id""",
+                (chapter_num,)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                if json_output:
+                    print(json.dumps({"error": f"Chapter {chapter_num} not found"}))
+                else:
+                    console.print(f"[yellow]Chapter {chapter_num} not found[/yellow]")
+                return
+
+            result = {
+                "chapter": row[0],
+                "description": row[1] or "",
+                "last_checked_at": row[2] or "",
+                "last_changed_at": row[3] or "",
+                "entry_count": row[4],
+            }
+
+            if json_output:
+                print(json.dumps(result, indent=2))
+            else:
+                table = Table(title=f"Chapter {row[0]}")
+                table.add_column("Field", style="cyan")
+                table.add_column("Value", style="green")
+                table.add_row("Description", row[1] or "")
+                table.add_row("Last checked", row[2] or "N/A")
+                table.add_row("Last changed", row[3] or "N/A")
+                table.add_row("Entries", str(row[4]))
+                console.print(table)
+        else:
+            cursor.execute(
+                """SELECT last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters
+                   FROM data_freshness
+                   ORDER BY id DESC LIMIT 1"""
+            )
+            freshness_row = cursor.fetchone()
+
+            if not freshness_row:
+                if json_output:
+                    print(json.dumps({"error": "No freshness data recorded. Run ingest first."}))
+                else:
+                    console.print("[yellow]No freshness data recorded. Run ingest first.[/yellow]")
+                return
+
+            result = {
+                "last_full_refresh": freshness_row[0],
+                "refresh_duration_secs": freshness_row[1],
+                "chapters_changed": freshness_row[2],
+                "total_chapters": freshness_row[3],
+            }
+
+            if json_output:
+                print(json.dumps(result, indent=2))
+            else:
+                table = Table(title="HTS Data Freshness")
+                table.add_column("Field", style="cyan")
+                table.add_column("Value", style="green")
+                table.add_row("Last refresh", freshness_row[0] or "N/A")
+                table.add_row("Duration", f"{freshness_row[1]:.1f}s" if freshness_row[1] else "N/A")
+                table.add_row("Chapters changed", f"{freshness_row[2]} of {freshness_row[3]}")
+                console.print(table)
+
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()

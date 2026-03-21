@@ -2,49 +2,95 @@
 """Check for HTS data updates and re-ingest if changes are detected.
 
 Since the /reststop/releases endpoint returns 404, this script detects changes
-by fetching a probe chapter (chapter 01) from the API and comparing a hash of
-its response against the last-known hash stored in data/last_revision.txt.
+by fetching all 99 chapters from the API in parallel and comparing content
+hashes against the stored hashes in the database.
 
-If the data has changed (or no previous hash exists), it runs a full re-ingest.
+If any chapter's data has changed (or no database exists), it runs a full
+re-ingest. Per-chapter timestamps track when each chapter was last checked
+and when its content actually changed.
 """
 
 import hashlib
 import json
-import os
+import sqlite3
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
-
 DATA_DIR = Path("data")
-REVISION_FILE = DATA_DIR / "last_revision.txt"
-PROBE_URL = "https://hts.usitc.gov/reststop/search?keyword=chapter%2001&limit=5000"
+DB_PATH = DATA_DIR / "hts.db"
+API_BASE = "https://hts.usitc.gov/reststop/search"
+MAX_WORKERS = 10
 
 
-def fetch_probe_hash() -> str:
-    """Fetch chapter 01 from the API and return a content hash."""
-    response = requests.get(PROBE_URL, timeout=30)
+def fetch_chapter(chapter_num: int) -> tuple[str, list]:
+    """Fetch a chapter from the API. Returns (chapter_str, data)."""
+    chapter_str = f"{chapter_num:02d}"
+    url = f"{API_BASE}?keyword=chapter%20{chapter_str}&limit=5000"
+    response = requests.get(url, timeout=30)
     response.raise_for_status()
     data = response.json()
-    # Sort entries by hts code for deterministic hashing
-    if isinstance(data, list):
-        data.sort(key=lambda e: e.get("htsno", ""))
-    content = json.dumps(data, sort_keys=True)
+    if not isinstance(data, list):
+        return chapter_str, []
+    return chapter_str, data
+
+
+def hash_chapter(data: list) -> str:
+    """Compute a deterministic SHA256 hash for a chapter's API response."""
+    sorted_data = sorted(data, key=lambda e: e.get("htsno", ""))
+    content = json.dumps(sorted_data, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def get_stored_hash() -> str | None:
-    """Read the last stored revision hash, or None if not present."""
-    if not REVISION_FILE.exists():
-        return None
-    return REVISION_FILE.read_text().strip()
+def fetch_all_chapter_hashes() -> dict[str, str]:
+    """Fetch all 99 chapters in parallel and return {chapter_str: hash}."""
+    hashes = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(fetch_chapter, ch): ch for ch in range(1, 100)}
+        for future in as_completed(futures):
+            chapter_num = futures[future]
+            try:
+                chapter_str, data = future.result()
+                hashes[chapter_str] = hash_chapter(data)
+            except Exception as e:
+                print(f"Error fetching chapter {chapter_num:02d}: {e}", file=sys.stderr)
+    return hashes
 
 
-def save_hash(hash_value: str) -> None:
-    """Save the revision hash to disk."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    REVISION_FILE.write_text(hash_value + "\n")
+def get_stored_hashes() -> dict[str, str]:
+    """Read stored content hashes from the database. Returns {chapter_number: hash}."""
+    if not DB_PATH.exists():
+        return {}
+    try:
+        db = sqlite3.connect(str(DB_PATH))
+        cursor = db.execute("SELECT number, content_hash FROM chapters WHERE content_hash IS NOT NULL")
+        result = {row[0]: row[1] for row in cursor.fetchall()}
+        db.close()
+        return result
+    except sqlite3.OperationalError:
+        return {}
+
+
+def update_checked_timestamps(now: str) -> None:
+    """Update last_checked_at on all chapters without re-ingesting."""
+    if not DB_PATH.exists():
+        return
+    db = sqlite3.connect(str(DB_PATH))
+    try:
+        db.execute("UPDATE chapters SET last_checked_at = ?", (now,))
+        db.execute(
+            """INSERT INTO data_freshness
+               (last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters)
+               VALUES (?, 0, 0, 99)""",
+            (now,)
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def run_ingest() -> int:
@@ -58,38 +104,46 @@ def run_ingest() -> int:
 
 
 def main():
-    print("Checking for HTS data updates...")
+    print("Checking for HTS data updates (all 99 chapters)...")
+    start_time = time.time()
+    now = datetime.now(timezone.utc).isoformat()
 
     try:
-        current_hash = fetch_probe_hash()
+        current_hashes = fetch_all_chapter_hashes()
     except Exception as e:
-        print(f"Error fetching probe data: {e}", file=sys.stderr)
+        print(f"Error fetching chapter data: {e}", file=sys.stderr)
         sys.exit(1)
 
-    stored_hash = get_stored_hash()
+    if len(current_hashes) < 99:
+        print(f"Warning: only fetched {len(current_hashes)}/99 chapters", file=sys.stderr)
 
-    if stored_hash == current_hash:
-        print("Already up to date.")
-        return
+    stored_hashes = get_stored_hashes()
+    fetch_duration = time.time() - start_time
 
-    if stored_hash is None:
-        print("No previous revision recorded. Running initial ingest...")
+    if not stored_hashes:
+        print(f"No previous data found. Running initial ingest... (probed in {fetch_duration:.1f}s)")
     else:
-        print(f"Data changed (old: {stored_hash[:12]}... new: {current_hash[:12]}...)")
+        changed = [ch for ch in current_hashes if current_hashes[ch] != stored_hashes.get(ch)]
+        if not changed:
+            print(f"Already up to date. (checked all 99 chapters in {fetch_duration:.1f}s)")
+            update_checked_timestamps(now)
+            return
+
+        print(f"Data changed in {len(changed)} chapter(s): {', '.join(sorted(changed))}")
+        print(f"(probed in {fetch_duration:.1f}s)")
         print("Running re-ingest...")
 
     # Remove old database so ingest creates fresh tables
-    db_path = DATA_DIR / "hts.db"
-    if db_path.exists():
-        db_path.unlink()
+    if DB_PATH.exists():
+        DB_PATH.unlink()
 
     exit_code = run_ingest()
     if exit_code != 0:
         print("Ingest failed!", file=sys.stderr)
         sys.exit(exit_code)
 
-    save_hash(current_hash)
-    print(f"Refresh complete. Revision hash: {current_hash[:12]}...")
+    total_duration = time.time() - start_time
+    print(f"Refresh complete in {total_duration:.1f}s.")
 
 
 if __name__ == "__main__":
