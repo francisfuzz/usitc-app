@@ -184,14 +184,15 @@ If the file doesn't exist, create it. Add the `hts` server entry, replacing `/ab
 
 Quit and reopen Claude Desktop. The HTS tools should now appear in the tools menu (the hammer icon in the chat input area).
 
-You should see four tools available:
+You should see five tools available:
 
 | Tool | What it does |
 |------|-------------|
 | `search_hts` | Search tariff entries by keyword |
 | `get_code` | Look up a specific HTS code |
 | `list_chapter` | List all entries in a chapter |
-| `get_chapters` | Get all chapters with entry counts |
+| `get_chapters` | Get all chapters with entry counts and descriptions |
+| `get_data_freshness` | Check when the database was last updated |
 
 ### Step 4 — Try it
 
@@ -218,6 +219,62 @@ Claude will call the appropriate HTS tool and return the tariff data from your l
 **Docker container errors:**
 - Rebuild the image: `docker build -t hts-local .`
 - Check Docker is running: `docker ps`
+
+---
+
+## Browsable Web Interface (Datasette)
+
+The HTS database is published as a live, searchable web app at **https://usitc-hts.fly.dev/** — no setup required, just open it in your browser.
+
+### What you can do on the web interface
+
+- **Search by keyword** — Full-text search across product descriptions (e.g., "coffee", "copper", "titanium")
+- **Browse by chapter** — Click chapters to see all tariff entries (e.g., Chapter 74 = "Copper and Articles Thereof")
+- **Exact code lookup** — Filter by HTS code (e.g., `7408.11.30`)
+- **Export data** — Download search results as CSV or JSON
+- **Global search** — Search across all 99 chapters at once
+- **View rates & specifications** — See duty rates, units, and classifications for each product
+
+### Running your own Datasette locally
+
+If you want to host the interface on your own machine:
+
+```bash
+# 1. Build and ingest data (as usual)
+docker build -t hts-local .
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+
+# 2. Update chapter titles (real names instead of "Chapter 01")
+python3 scripts/chapter_titles.py data/hts.db
+
+# 3. Build the FTS5 search index (must use sqlite-utils for Datasette to detect it)
+python3 -m sqlite_utils enable-fts data/hts.db hts_entries description --fts5 --replace
+
+# 4. Serve locally on http://localhost:8321
+docker run --rm -p 8321:8321 -v "$(pwd)/data:/app/data" -v "$(pwd)/metadata.json:/app/metadata.json" hts-local \
+  -m datasette data/hts.db --metadata metadata.json --port 8321 --host 0.0.0.0 --setting default_page_size 50
+```
+
+Then open **http://localhost:8321/** in your browser.
+
+### Deploying to Fly.io (free tier)
+
+To deploy your own instance on Fly.io's free tier:
+
+```bash
+# 1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+# 2. Log in: flyctl auth login
+# 3. Deploy:
+
+datasette publish fly data/hts.db \
+  --app="my-hts-instance" \
+  --metadata metadata.json \
+  --install=datasette-search-all \
+  --install=datasette-render-html \
+  --setting default_page_size 50
+```
+
+Your instance will be live at `https://my-hts-instance.fly.dev/`. The entire deployment is free using Fly.io's always-free tier (2 shared CPUs, 256 MB RAM).
 
 ---
 
@@ -255,20 +312,28 @@ The test suite uses an in-memory SQLite database with fixture data — no intern
 
 ```
 usitc-app/
-├── hts.py              # CLI: search, code, chapter, chapters commands
-├── mcp_server.py       # MCP server: 4 tools, stdio transport
+├── hts.py                  # CLI: search, code, chapter, chapters commands
+├── mcp_server.py           # MCP server: 4 tools, stdio transport
+├── metadata.json           # Datasette config (titles, facets, descriptions)
 ├── scripts/
-│   ├── ingest.py       # Download + load all 99 chapters into SQLite
-│   └── refresh.py      # Check for data updates, re-ingest if changed
+│   ├── ingest.py           # Download + load all 99 chapters into SQLite
+│   ├── refresh.py          # Check for data updates, re-ingest if changed
+│   ├── build_fts.py        # Build FTS5 search index (uses sqlite-utils)
+│   ├── chapter_titles.py   # Enrich chapter descriptions with real HTS titles
+│   └── hashing.py          # Compute content hashes for change detection
 ├── tests/
-│   ├── conftest.py     # Shared test fixtures
-│   ├── test_cli.py     # CLI tests
-│   └── test_mcp.py     # MCP server tests
-├── data/               # SQLite database (created by ingest, gitignored)
-├── docs/               # Design docs, API discovery notes
+│   ├── conftest.py         # Shared test fixtures
+│   ├── test_cli.py         # CLI tests
+│   ├── test_mcp.py         # MCP server tests
+│   ├── test_build_fts.py   # FTS index tests
+│   ├── test_chapter_titles.py  # Chapter title enrichment tests
+│   └── test_metadata.py    # Datasette metadata validation
+├── data/                   # SQLite database (created by ingest, gitignored)
+├── docs/                   # Design docs, Datasette plan
 ├── Dockerfile
 ├── requirements.txt
-└── CLAUDE.md           # Guidance for Claude Code
+├── CLAUDE.md               # Development guidance for Claude Code
+└── README.md               # This file
 ```
 
 ---

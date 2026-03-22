@@ -193,11 +193,55 @@ To use the HTS tools in Claude Desktop:
 
 The server uses stdio transport (no port exposed). Claude Desktop spawns the container, communicates over stdin/stdout, and the container exits cleanly when the session ends.
 
+## Datasette Integration
+
+**Live at:** https://usitc-hts.fly.dev/
+
+The database is published as a public Datasette instance for browsable web access.
+
+### Key Files
+- **`metadata.json`** — Datasette configuration (titles, facets, label columns, descriptions)
+- **`scripts/build_fts.py`** — Builds FTS5 full-text search index using `sqlite-utils` (critical: must use sqlite-utils, not manual SQL, for Datasette to detect FTS)
+- **`scripts/chapter_titles.py`** — Enriches `chapters.description` with real HTS titles ("Live Animals" instead of "Chapter 01")
+- **`requirements.txt`** — Includes datasette, datasette-search-all, datasette-render-html, datasette-publish-fly, sqlite-utils
+
+### Critical Learnings
+
+**FTS5 Detection:** Datasette only auto-detects FTS5 tables created by `sqlite-utils`. Manual SQL creation (with `content_rowid=` parameter) breaks Datasette's search. Always use:
+```python
+import sqlite_utils
+db = sqlite_utils.Database("data/hts.db")
+db["hts_entries"].enable_fts(["description"], fts_version="fts5")
+```
+
+**Typer Compatibility:** Typer 0.15.x breaks with click 8.3+ (signature change in `Parameter.make_metavar()`). Pin `typer~=0.24.0` for click 8.3+ compatibility.
+
+**Chapter UX:** The `chapters` table now uses `label_column: "description"` (real titles like "Copper and Articles Thereof") instead of just chapter numbers. A `browse_chapters` SQL view shows entry counts per chapter for easier navigation.
+
+**HTML Rendering:** 1,535 entries have `<i>` tags for scientific names. The `datasette-render-html` plugin renders these correctly; without it, raw `<i>` text appears.
+
+### Deploying to Fly.io
+
+```bash
+# 1. Update chapter titles and rebuild FTS
+python3 scripts/chapter_titles.py data/hts.db
+python3 -m sqlite_utils enable-fts data/hts.db hts_entries description --fts5 --replace
+
+# 2. Deploy (requires flyctl auth login)
+datasette publish fly data/hts.db \
+  --app="usitc-hts" \
+  --metadata metadata.json \
+  --install=datasette-search-all \
+  --install=datasette-render-html \
+  --setting default_page_size 50
+```
+
+The deployment is automatic: image build (~52 MB), two machines provisioned on Fly.io free tier, zero cost.
+
 ## Known Limitations
 
 - **Single-threaded CLI** — no parallel queries; acceptable for interactive lookups
 - **No pagination in CLI search** — hardcoded limit of 10 results; use `--limit` flag to increase
-- **No full-text search** — uses simple LIKE queries; could upgrade to SQLite FTS5 for better relevance
 - **Revision detection is content-hash based** — `scripts/refresh.py` hashes all 99 chapters to detect changes, but cannot distinguish USITC revision numbers (the API provides none)
 - **`format_entry_as_dict` column mapping** — uses positional `zip` against hardcoded column names; fragile if the SELECT changes. Consider using `cursor.description` or named tuples.
 
