@@ -179,7 +179,8 @@ def chapters(
             table.add_column("Description", style="green")
             table.add_column("Entries", style="magenta", justify="right")
 
-            for number, description, entry_count in rows:
+            for row in rows:
+                number, description, entry_count = row[0], row[1], row[2]
                 table.add_row(number, description or "", str(entry_count))
 
             console.print(table)

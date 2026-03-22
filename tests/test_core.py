@@ -196,12 +196,50 @@ def test_list_chapter_entries_pads_single_digit(test_db):
 
 
 def test_get_all_chapters(test_db):
-    """get_all_chapters returns chapter number, description, and count."""
+    """get_all_chapters returns chapter number, description, count, and freshness timestamps."""
     db = sqlite3.connect(str(test_db))
     try:
         rows = hts_core.get_all_chapters(db)
         assert len(rows) == 3  # fixture has 3 chapters
         numbers = [r[0] for r in rows]
         assert numbers == sorted(numbers)
+        # Each row has 5 columns: number, description, count, last_checked_at, last_changed_at
+        assert len(rows[0]) == 5
+        assert rows[0][3] is not None  # last_checked_at
+        assert rows[0][4] is not None  # last_changed_at
+    finally:
+        db.close()
+
+
+def test_get_data_freshness(test_db):
+    """get_data_freshness returns refresh metadata and per-chapter timestamps."""
+    db = sqlite3.connect(str(test_db))
+    try:
+        result = hts_core.get_data_freshness(db)
+        assert result["last_full_refresh"] is not None
+        assert result["refresh_duration_secs"] is not None
+        assert result["chapters_changed_in_last_refresh"] == 3
+        assert result["total_chapters"] == 99
+        assert len(result["chapters"]) == 3
+        for ch in result["chapters"]:
+            assert "number" in ch
+            assert "last_checked_at" in ch
+            assert "last_changed_at" in ch
+    finally:
+        db.close()
+
+
+def test_get_data_freshness_empty_table(test_db):
+    """get_data_freshness returns None fields when no freshness records exist."""
+    db = sqlite3.connect(str(test_db))
+    try:
+        db.execute("DELETE FROM data_freshness")
+        result = hts_core.get_data_freshness(db)
+        assert result["last_full_refresh"] is None
+        assert result["refresh_duration_secs"] is None
+        assert result["chapters_changed_in_last_refresh"] is None
+        assert result["total_chapters"] is None
+        # chapters should still be returned
+        assert len(result["chapters"]) == 3
     finally:
         db.close()
