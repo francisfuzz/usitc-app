@@ -1,0 +1,24 @@
+{
+  "title": "US Harmonized Tariff Schedule",
+  "description": "Browse and search the full US HTS tariff classification data from hts.usitc.gov. Updated from the USITC public API.",
+  "license": "Public Domain",
+  "license_url": "https://www.usitc.gov/",
+  "source": "US International Trade Commission",
+  "source_url": "https://hts.usitc.gov/",
+  "databases": {
+    "hts": {
+      "tables": {
+        "hts_entries": {
+          "label_column": "hts_code",
+          "description_html": "Tariff line items with duty rates, units, and classification hierarchy. Search uses full-text search on the description column. To look up a specific HTS code, use the column filter rather than the search box.",
+          "sortable_columns": ["hts_code", "chapter_id", "indent"],
+          "facets": ["unit"]
+        },
+        "chapters": {
+          "label_column": "number",
+          "description_html": "HTS chapters 01-99."
+        }
+      }
+    }
+  }
+}
