@@ -1,6 +1,8 @@
 # tariff-everywhere: A Development Story
 
 > 📝 A narrative of how **tariff-everywhere** (the HTS lookup service) grew from a discovery spike into a production-ready tool, told through git history and architectural decisions.
+>
+> Written in partnership: Frances built the vision and made every decision; Claude was the thinking partner—catching edge cases, suggesting pivots (Datasette!), and ensuring nothing was left undocumented.
 
 ---
 
@@ -53,7 +55,7 @@ With API understanding in hand, the next phase built **three layers simultaneous
 - `info` for metadata queries
 - Comprehensive pytest suite using in-memory SQLite fixtures
 
-❓ **A design question emerged early**: How should JSON output work? The team chose to use `print()` directly instead of Rich's `console.print()` to avoid ANSI control character injection. This pattern became foundational for all JSON endpoints.
+❓ **A design question emerged early**: How should JSON output work? I decided (with Claude's input) to use `print()` directly instead of Rich's `console.print()` to avoid ANSI control character injection. Claude caught that control characters could sneak in through Rich's formatting—a subtle gotcha I might have missed. This pattern became foundational for all JSON endpoints.
 
 ---
 
@@ -61,7 +63,7 @@ With API understanding in hand, the next phase built **three layers simultaneous
 
 ### Adding Confidence to Refresh Cycles
 
-As the project matured, a critical need surfaced: **How do we know when tariff data has changed?** The USITC API doesn't expose revision numbers or release dates, so the team implemented a **content-hash based freshness detection system**.
+As the project matured, a critical need surfaced: **How do I know when tariff data has changed?** The USITC API doesn't expose revision numbers or release dates, so Claude and I designed a **content-hash based freshness detection system**.
 
 ```
 42eca52 feat: add per-chapter freshness tracking and data revision metadata
@@ -71,10 +73,10 @@ As the project matured, a critical need surfaced: **How do we know when tariff d
 5758e13 feat: add backup/restore safety and parallel ingest
 ```
 
-💭 **The thinking here**: Instead of blindly re-ingesting, we:
+💭 **The thinking here**: Instead of blindly re-ingesting, Claude and I settled on:
 1. Hash all 99 chapters in parallel using `ThreadPoolExecutor`
 2. Compare against stored hashes in the `chapters` table
-3. Track two timestamps per chapter: `last_checked_at` (when we looked) vs. `last_changed_at` (when it actually differed)
+3. Track two timestamps per chapter: `last_checked_at` (when I checked) vs. `last_changed_at` (when it actually differed)
 4. Only re-ingest chapters that changed
 5. **Backup the database before any refresh** — safety first
 
@@ -91,7 +93,7 @@ This approach is defensive: it prevents accidental data loss during refresh cycl
 
 ### From Spike to Production Code
 
-With core features working, the team focused on **reliability, testability, and code reuse**:
+With core features working, Claude and I shifted focus to **reliability, testability, and code reuse**:
 
 ```
 5e2c637 Harden CI pipeline and Docker build
@@ -140,7 +142,7 @@ Merged the **backup/restore safety layer** and **parallel ingest optimization**:
 
 ### From CLI-Only to Browsable
 
-A major pivot happened here. Instead of only offering CLI and MCP tools, the team asked: **"What if we exposed this as a searchable web interface?"**
+A major pivot happened here. Claude suggested: **"What if we exposed this as a searchable web interface?"** It was a turning point—I'd been thinking CLI + MCP only, but Claude's idea opened up a whole new consumption mode.
 
 ```
 a7ec23f feat: add Datasette support with FTS5 search and metadata
@@ -207,7 +209,7 @@ c12c0c2 docs: add Hippocratic License 3.0 (HL3-FULL) and badge
 - Added a **project audit report** documenting code quality, CI/Docker health, and reuse metrics
 - Chose **Hippocratic License 3.0** to protect against harmful use while keeping the code open
 
-❓ **Why this matters**: Documentation is the bridge between "I built something cool" and "someone else can maintain this." The team invested in ensuring the next person (or the next version of themselves) has a clear mental model.
+❓ **Why this matters**: Documentation is the bridge between "I built something cool" and "someone else can maintain this." I invested time (with Claude's help structuring and refining) to ensure the next person (or the next version of myself) has a clear mental model.
 
 ---
 
@@ -225,7 +227,7 @@ The closing commits reflect **modern development practices**:
 - Fixed edge case bugs (filename typo) and improved visibility with a project banner
 - Prepared the repository for collaborative AI-assisted development
 
-💭 **The narrative arc**: Started with a learning spike, built production infrastructure, discovered a better UI paradigm (Datasette), renamed intentionally, documented obsessively, and then opened the door to AI collaboration.
+💭 **The narrative arc**: Started with a learning spike, built production infrastructure with Claude as a thinking partner, discovered a better UI paradigm (Datasette), renamed intentionally, documented obsessively, and prepared the repo for future Claude sessions. This wasn't "adding AI at the end"—Claude was embedded from the start.
 
 ---
 
@@ -235,7 +237,7 @@ The closing commits reflect **modern development practices**:
 From backup/restore safety to content-hash freshness tracking, every feature considered "what goes wrong?" before shipping.
 
 ### ✨ Proactive Documentation
-Rather than writing docs after the fact, the team documented decisions, learnings, and deployment gotchas as they went. CLAUDE.md grew alongside the code.
+Rather than writing docs after the fact, Claude and I documented decisions, learnings, and deployment gotchas as we went. CLAUDE.md grew alongside the code—Claude would flag "future you will need to know this" moments, and I'd commit them immediately.
 
 ### 💭 Collaborative Refactoring
 The core library extraction (`hts_core/`) showed a willingness to pause feature work and improve code structure. This paid dividends later.
