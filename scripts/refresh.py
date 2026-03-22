@@ -10,7 +10,6 @@ re-ingest. Per-chapter timestamps track when each chapter was last checked
 and when its content actually changed.
 """
 
-import json
 import sqlite3
 import sys
 import time

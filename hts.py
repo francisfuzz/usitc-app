@@ -3,7 +3,6 @@
 
 import sqlite3
 import json
-import os
 from typing import Optional
 from pathlib import Path
 
