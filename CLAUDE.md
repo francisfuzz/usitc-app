@@ -10,6 +10,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All development runs in Docker. No Python, pip, or virtualenv required on the host.
 
+## Before You Start
+
+Before beginning any work, build the Docker image and verify the environment:
+
+```bash
+# 1. Build the image
+docker build -t hts-local .
+
+# 2. Run the test suite (all tests should pass)
+docker run --rm hts-local -m pytest tests/ -v
+
+# 3. Smoke test the CLI
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py --help
+```
+
+If `data/hts.db` does not exist yet, run the ingest first:
+```bash
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+```
+
 ## Architecture
 
 ### Data Layer
