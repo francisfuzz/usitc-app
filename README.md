@@ -2,15 +2,18 @@
 
 # usitc-app
 
-A local [Harmonized Tariff Schedule](https://hts.usitc.gov/) (HTS) lookup tool. Search tariff codes, duty rates, and product classifications from the US International Trade Commission — entirely on your machine.
+A [Harmonized Tariff Schedule](https://hts.usitc.gov/) (HTS) lookup tool. Search tariff codes, duty rates, and product classifications from the US International Trade Commission.
 
-Three ways to use it:
+Four ways to use it:
 
-| Interface | Best for |
-|-----------|----------|
-| **CLI** | Quick terminal lookups (`search`, `code`, `chapter`, `chapters`) |
-| **MCP Server** | Giving AI agents (like Claude) access to tariff data |
-| **Python directly** | Development without Docker |
+| Interface | Best for | Setup time |
+|-----------|----------|-----------|
+| **Web** (Datasette) | Browse, search, export without any setup | None — it's live now |
+| **CLI** | Quick terminal lookups (`search`, `code`, `chapter`, `chapters`) | Docker or Python |
+| **MCP Server** | Giving AI agents (like Claude) access to tariff data | Docker setup |
+| **Python directly** | Development without Docker | Python 3.12+ |
+
+**🌐 Jump straight to the web app:** https://usitc-hts.fly.dev/
 
 ---
 
