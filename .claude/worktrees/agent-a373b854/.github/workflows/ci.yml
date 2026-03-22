@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t hts-local .
+
+      - name: Lint with ruff
+        run: docker run --rm hts-local -m ruff check hts.py mcp_server.py scripts/
+        continue-on-error: true
+
+      - name: Run test suite with coverage
+        run: docker run --rm hts-local -m pytest tests/ -v --cov=. --cov-report=term-missing
+
+      - name: Verify CLI help
+        run: docker run --rm hts-local hts.py --help

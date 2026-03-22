@@ -2,6 +2,8 @@
 
 # tariff-everywhere
 
+![tariff-everywhere banner](assets/images/tariff-everywhere-banner.jpeg)
+
 A [Harmonized Tariff Schedule](https://hts.usitc.gov/) (HTS) lookup tool. Search tariff codes, duty rates, and product classifications from the US International Trade Commission.
 
 Four ways to use it:
