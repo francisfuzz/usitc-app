@@ -10,6 +10,7 @@ re-ingest. Per-chapter timestamps track when each chapter was last checked
 and when its content actually changed.
 """
 
+import shutil
 import sqlite3
 import sys
 import time
@@ -126,14 +127,26 @@ def main():
         print(f"(probed in {fetch_duration:.1f}s)")
         print("Running re-ingest...")
 
-    # Remove old database so ingest creates fresh tables
-    if DB_PATH.exists():
+    # Back up existing database before re-ingesting
+    backup_path = DATA_DIR / "hts.db.backup"
+    had_existing_db = DB_PATH.exists()
+
+    if had_existing_db:
+        print(f"Backing up existing database to {backup_path}...")
+        shutil.copy2(str(DB_PATH), str(backup_path))
         DB_PATH.unlink()
 
     exit_code = run_ingest()
     if exit_code != 0:
         print("Ingest failed!", file=sys.stderr)
+        if had_existing_db and backup_path.exists():
+            print("Restoring database from backup...", file=sys.stderr)
+            shutil.copy2(str(backup_path), str(DB_PATH))
         sys.exit(exit_code)
+
+    # Success — remove backup
+    if backup_path.exists():
+        backup_path.unlink()
 
     total_duration = time.time() - start_time
     print(f"Refresh complete in {total_duration:.1f}s.")
