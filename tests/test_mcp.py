@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from mcp_server import search_hts, get_code, list_chapter, get_chapters
+from mcp_server import search_hts, get_code, list_chapter, get_chapters, get_data_freshness
 
 
 # --- search_hts ---
@@ -109,6 +109,8 @@ def test_get_chapters_fields(test_db):
         assert "number" in chapter
         assert "description" in chapter
         assert "entry_count" in chapter
+        assert "last_checked_at" in chapter
+        assert "last_changed_at" in chapter
 
 
 def test_get_chapters_entry_counts(test_db):
@@ -140,4 +142,43 @@ def test_get_chapters_entry_counts(test_db):
 def test_get_chapters_sorted(test_db):
     result = json.loads(get_chapters())
     numbers = [c["number"] for c in result]
+    assert numbers == sorted(numbers)
+
+
+def test_get_chapters_timestamps(test_db):
+    """Chapters include freshness timestamps."""
+    result = json.loads(get_chapters())
+    for chapter in result:
+        assert chapter["last_checked_at"] == "2026-03-21T04:00:00+00:00"
+        assert chapter["last_changed_at"] == "2026-03-15T04:00:00+00:00"
+
+
+# --- get_data_freshness ---
+
+
+def test_get_data_freshness_structure(test_db):
+    """Freshness response has expected top-level fields."""
+    result = json.loads(get_data_freshness())
+    assert result["last_full_refresh"] == "2026-03-21T04:00:00+00:00"
+    assert result["refresh_duration_secs"] == 18.4
+    assert result["chapters_changed_in_last_refresh"] == 3
+    assert result["total_chapters"] == 99
+
+
+def test_get_data_freshness_chapters(test_db):
+    """Freshness response includes per-chapter timestamps."""
+    result = json.loads(get_data_freshness())
+    assert "chapters" in result
+    assert isinstance(result["chapters"], list)
+    assert len(result["chapters"]) == 3
+    for chapter in result["chapters"]:
+        assert "number" in chapter
+        assert "last_checked_at" in chapter
+        assert "last_changed_at" in chapter
+
+
+def test_get_data_freshness_chapters_sorted(test_db):
+    """Chapters in freshness response are sorted by number."""
+    result = json.loads(get_data_freshness())
+    numbers = [c["number"] for c in result["chapters"]]
     assert numbers == sorted(numbers)

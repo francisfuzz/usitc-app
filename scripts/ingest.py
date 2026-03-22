@@ -2,10 +2,14 @@
 """Download complete HTS schedule from API and load into SQLite."""
 
 import sqlite3
+import time
 import requests
 import sys
 import os
 import json
+from datetime import datetime, timezone
+
+from scripts.hashing import compute_chapter_hash
 
 
 def create_schema(db):
@@ -14,9 +18,12 @@ def create_schema(db):
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chapters (
-        id          INTEGER PRIMARY KEY,
-        number      TEXT NOT NULL UNIQUE,
-        description TEXT
+        id              INTEGER PRIMARY KEY,
+        number          TEXT NOT NULL UNIQUE,
+        description     TEXT,
+        content_hash    TEXT,
+        last_changed_at TEXT,
+        last_checked_at TEXT
     )
     """)
 
@@ -42,10 +49,20 @@ def create_schema(db):
     cursor.execute("CREATE INDEX idx_hts_code ON hts_entries(hts_code)")
     cursor.execute("CREATE INDEX idx_description ON hts_entries(description)")
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS data_freshness (
+        id                    INTEGER PRIMARY KEY,
+        last_full_refresh     TEXT NOT NULL,
+        refresh_duration_secs REAL,
+        chapters_changed      INTEGER,
+        total_chapters        INTEGER
+    )
+    """)
+
     db.commit()
 
 
-def fetch_and_ingest_chapter(db, chapter_num: int) -> tuple:
+def fetch_and_ingest_chapter(db, chapter_num: int, now: str | None = None) -> tuple:
     """Fetch a chapter from API and insert into database."""
     try:
         chapter_str = f"{chapter_num:02d}"
@@ -59,11 +76,15 @@ def fetch_and_ingest_chapter(db, chapter_num: int) -> tuple:
             return 0, 0
 
         cursor = db.cursor()
+        timestamp = now or datetime.now(timezone.utc).isoformat()
+        content_hash = compute_chapter_hash(data)
 
-        # Insert chapter
+        # Insert chapter with content hash and timestamps
         cursor.execute(
-            "INSERT OR IGNORE INTO chapters (number, description) VALUES (?, ?)",
-            (chapter_str, f"Chapter {chapter_str}")
+            """INSERT OR IGNORE INTO chapters
+               (number, description, content_hash, last_changed_at, last_checked_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (chapter_str, f"Chapter {chapter_str}", content_hash, timestamp, timestamp)
         )
 
         # Get chapter id
@@ -147,13 +168,15 @@ def main():
         create_schema(db)
 
         print("Fetching and ingesting HTS data from all 99 chapters...")
+        start_time = time.time()
+        now = datetime.now(timezone.utc).isoformat()
 
         total_entries = 0
         total_chapters_done = 0
         total_duplicates = 0
 
         for ch in range(1, 100):
-            entries, duplicates = fetch_and_ingest_chapter(db, ch)
+            entries, duplicates = fetch_and_ingest_chapter(db, ch, now=now)
             total_entries += entries
             total_chapters_done += 1
             total_duplicates += duplicates
@@ -161,7 +184,18 @@ def main():
             if ch % 10 == 0:
                 print(f"  Completed {ch}/99 chapters ({total_entries} entries loaded so far)...")
 
-        print(f"Loaded {total_entries} entries across 99 chapters")
+        duration = time.time() - start_time
+
+        # Record freshness metadata
+        db.execute(
+            """INSERT INTO data_freshness
+               (last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters)
+               VALUES (?, ?, ?, ?)""",
+            (now, round(duration, 2), 99, 99)
+        )
+        db.commit()
+
+        print(f"Loaded {total_entries} entries across 99 chapters in {duration:.1f}s")
         if total_duplicates > 0:
             print(f"(Skipped {total_duplicates} duplicate HTS codes)")
 

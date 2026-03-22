@@ -217,3 +217,52 @@ def test_special_characters_in_json(test_db):
     result2 = runner.invoke(app, ["code", "0101.30.00", "--json"])
     data2 = json.loads(result2.output)
     assert "¢" in data2["column2_rate"]
+
+
+# --- info command ---
+
+
+def test_info_global_json(test_db):
+    """Global info returns freshness metadata."""
+    result = runner.invoke(app, ["info", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "last_full_refresh" in data
+    assert data["last_full_refresh"] == "2026-03-21T04:00:00+00:00"
+    assert data["refresh_duration_secs"] == 18.4
+    assert data["chapters_changed"] == 3
+    assert data["total_chapters"] == 99
+
+
+def test_info_global_table(test_db):
+    """Global info renders a table."""
+    result = runner.invoke(app, ["info"])
+    assert result.exit_code == 0
+    assert "Freshness" in result.output
+
+
+def test_info_chapter_json(test_db):
+    """Per-chapter info returns timestamps and entry count."""
+    result = runner.invoke(app, ["info", "--chapter", "74", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["chapter"] == "74"
+    assert data["last_checked_at"] == "2026-03-21T04:00:00+00:00"
+    assert data["last_changed_at"] == "2026-03-15T04:00:00+00:00"
+    assert data["entry_count"] > 0
+
+
+def test_info_chapter_not_found(test_db):
+    """Info for nonexistent chapter returns error."""
+    result = runner.invoke(app, ["info", "--chapter", "99", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "error" in data
+
+
+def test_info_chapter_zero_padding(test_db):
+    """Single-digit chapter '7' should be padded to '07'."""
+    result = runner.invoke(app, ["info", "--chapter", "7", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["chapter"] == "07"

@@ -223,9 +223,12 @@ def _create_test_db(db_path):
 
     cursor.execute("""
     CREATE TABLE chapters (
-        id          INTEGER PRIMARY KEY,
-        number      TEXT NOT NULL UNIQUE,
-        description TEXT
+        id              INTEGER PRIMARY KEY,
+        number          TEXT NOT NULL UNIQUE,
+        description     TEXT,
+        content_hash    TEXT,
+        last_changed_at TEXT,
+        last_checked_at TEXT
     )
     """)
 
@@ -247,11 +250,34 @@ def _create_test_db(db_path):
     cursor.execute("CREATE INDEX idx_hts_code ON hts_entries(hts_code)")
     cursor.execute("CREATE INDEX idx_description ON hts_entries(description)")
 
+    cursor.execute("""
+    CREATE TABLE data_freshness (
+        id                    INTEGER PRIMARY KEY,
+        last_full_refresh     TEXT NOT NULL,
+        refresh_duration_secs REAL,
+        chapters_changed      INTEGER,
+        total_chapters        INTEGER
+    )
+    """)
+
+    # Insert freshness record
+    cursor.execute(
+        """INSERT INTO data_freshness
+           (last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters)
+           VALUES (?, ?, ?, ?)""",
+        ("2026-03-21T04:00:00+00:00", 18.4, 3, 99)
+    )
+
     # Insert chapters
     chapters = {"01": "Chapter 01", "07": "Chapter 07", "74": "Chapter 74"}
     chapter_ids = {}
     for num, desc in chapters.items():
-        cursor.execute("INSERT INTO chapters (number, description) VALUES (?, ?)", (num, desc))
+        cursor.execute(
+            """INSERT INTO chapters
+               (number, description, content_hash, last_changed_at, last_checked_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (num, desc, f"hash_{num}", "2026-03-15T04:00:00+00:00", "2026-03-21T04:00:00+00:00")
+        )
         chapter_ids[num] = cursor.lastrowid
 
     # Insert entries
