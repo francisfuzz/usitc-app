@@ -1,6 +1,6 @@
 requests~=2.32.0
 mcp~=1.8.0
-typer~=0.15.0
+typer~=0.24.0
 rich~=13.9.0
 datasette~=0.65.0
 datasette-search-all~=1.1.0

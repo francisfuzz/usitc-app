@@ -55,10 +55,10 @@ class TestMetadataStructure:
         tables = self.metadata["databases"]["hts"]["tables"]
         assert "chapters" in tables
 
-    def test_chapters_label_column_is_number(self):
-        """chapters.description is useless ('Chapter 01'), number is better."""
+    def test_chapters_label_column_is_description(self):
+        """chapters.description now has real titles, so use it as the FK label."""
         chapter_config = self.metadata["databases"]["hts"]["tables"]["chapters"]
-        assert chapter_config["label_column"] == "number"
+        assert chapter_config["label_column"] == "description"
 
     def test_hts_entries_has_sortable_columns(self):
         entry_config = self.metadata["databases"]["hts"]["tables"]["hts_entries"]

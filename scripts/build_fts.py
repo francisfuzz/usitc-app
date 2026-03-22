@@ -9,38 +9,23 @@ Usage:
     # default: data/hts.db
 """
 
-import sqlite3
+import sqlite_utils
 import sys
 
 
 def build_fts(db_path: str = "data/hts.db"):
     """Enable FTS5 on hts_entries.description. Safe to re-run."""
-    db = sqlite3.connect(db_path)
+    db = sqlite_utils.Database(db_path)
+    table = db["hts_entries"]
+
+    # Disable FTS first for idempotency (ignore if not enabled)
     try:
-        cursor = db.cursor()
+        table.disable_fts()
+    except Exception:
+        pass
 
-        # Drop existing FTS tables for idempotency
-        cursor.execute("DROP TABLE IF EXISTS hts_entries_fts")
-
-        # Create FTS5 virtual table indexing description
-        cursor.execute("""
-        CREATE VIRTUAL TABLE hts_entries_fts USING fts5(
-            description,
-            content='hts_entries',
-            content_rowid='id'
-        )
-        """)
-
-        # Populate the FTS index from existing data
-        cursor.execute("""
-        INSERT INTO hts_entries_fts(rowid, description)
-        SELECT id, description FROM hts_entries
-        """)
-
-        db.commit()
-        print(f"FTS5 index created on hts_entries.description in {db_path}")
-    finally:
-        db.close()
+    table.enable_fts(["description"], fts_version="fts5")
+    print(f"FTS5 index created on hts_entries.description in {db_path}")
 
 
 if __name__ == "__main__":

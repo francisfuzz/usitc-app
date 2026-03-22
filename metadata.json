@@ -15,8 +15,12 @@
           "facets": ["unit"]
         },
         "chapters": {
-          "label_column": "number",
-          "description_html": "HTS chapters 01-99."
+          "label_column": "description",
+          "description_html": "HTS chapters 01-99. Click a chapter to see its tariff entries."
+        },
+        "browse_chapters": {
+          "description_html": "All 99 HTS chapters with entry counts. Click a chapter number to browse its tariff entries.",
+          "sortable_columns": ["chapter", "entries"]
         }
       }
     }
