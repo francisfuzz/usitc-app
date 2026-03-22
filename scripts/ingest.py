@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Download complete HTS schedule from API and load into SQLite."""
 
-import hashlib
 import sqlite3
 import time
 import requests
@@ -9,6 +8,8 @@ import sys
 import os
 import json
 from datetime import datetime, timezone
+
+from scripts.hashing import compute_chapter_hash
 
 
 def create_schema(db):
@@ -59,13 +60,6 @@ def create_schema(db):
     """)
 
     db.commit()
-
-
-def compute_chapter_hash(data: list) -> str:
-    """Compute a deterministic SHA256 hash for a chapter's API response."""
-    sorted_data = sorted(data, key=lambda e: e.get("htsno", ""))
-    content = json.dumps(sorted_data, sort_keys=True)
-    return hashlib.sha256(content.encode()).hexdigest()
 
 
 def fetch_and_ingest_chapter(db, chapter_num: int, now: str | None = None) -> tuple:

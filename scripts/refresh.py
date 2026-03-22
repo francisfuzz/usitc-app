@@ -10,7 +10,6 @@ re-ingest. Per-chapter timestamps track when each chapter was last checked
 and when its content actually changed.
 """
 
-import hashlib
 import json
 import sqlite3
 import sys
@@ -20,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+from scripts.hashing import compute_chapter_hash
 
 DATA_DIR = Path("data")
 DB_PATH = DATA_DIR / "hts.db"
@@ -39,13 +40,6 @@ def fetch_chapter(chapter_num: int) -> tuple[str, list]:
     return chapter_str, data
 
 
-def hash_chapter(data: list) -> str:
-    """Compute a deterministic SHA256 hash for a chapter's API response."""
-    sorted_data = sorted(data, key=lambda e: e.get("htsno", ""))
-    content = json.dumps(sorted_data, sort_keys=True)
-    return hashlib.sha256(content.encode()).hexdigest()
-
-
 def fetch_all_chapter_hashes() -> dict[str, str]:
     """Fetch all 99 chapters in parallel and return {chapter_str: hash}."""
     hashes = {}
@@ -55,7 +49,7 @@ def fetch_all_chapter_hashes() -> dict[str, str]:
             chapter_num = futures[future]
             try:
                 chapter_str, data = future.result()
-                hashes[chapter_str] = hash_chapter(data)
+                hashes[chapter_str] = compute_chapter_hash(data)
             except Exception as e:
                 print(f"Error fetching chapter {chapter_num:02d}: {e}", file=sys.stderr)
     return hashes
@@ -75,7 +69,7 @@ def get_stored_hashes() -> dict[str, str]:
         return {}
 
 
-def update_checked_timestamps(now: str) -> None:
+def update_checked_timestamps(now: str, duration_secs: float = 0) -> None:
     """Update last_checked_at on all chapters without re-ingesting."""
     if not DB_PATH.exists():
         return
@@ -85,8 +79,8 @@ def update_checked_timestamps(now: str) -> None:
         db.execute(
             """INSERT INTO data_freshness
                (last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters)
-               VALUES (?, 0, 0, 99)""",
-            (now,)
+               VALUES (?, ?, 0, 99)""",
+            (now, round(duration_secs, 2))
         )
         db.commit()
     finally:
@@ -126,7 +120,7 @@ def main():
         changed = [ch for ch in current_hashes if current_hashes[ch] != stored_hashes.get(ch)]
         if not changed:
             print(f"Already up to date. (checked all 99 chapters in {fetch_duration:.1f}s)")
-            update_checked_timestamps(now)
+            update_checked_timestamps(now, duration_secs=fetch_duration)
             return
 
         print(f"Data changed in {len(changed)} chapter(s): {', '.join(sorted(changed))}")
