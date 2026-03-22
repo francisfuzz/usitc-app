@@ -1,262 +1,109 @@
-# tariff-everywhere: A Development Story
+# How tariff-everywhere Came Together
 
-> 📝 A narrative of how **tariff-everywhere** (the HTS lookup service) grew from a discovery spike into a production-ready tool, told through git history and architectural decisions.
->
-> Written in partnership: Francis built the vision and made every decision; Claude was the thinking partner—catching edge cases, suggesting pivots (Datasette!), and ensuring nothing was left undocumented.
+When I started exploring the US International Trade Commission's API, I was honestly just trying to understand what was there. The public endpoint was less documented than I expected, and the original plan I'd sketched referenced an endpoint that no longer worked. That initial confusion actually shaped everything that came after.
 
----
+The real API turned out to be simpler than I'd feared: a flat JSON feed returning about 28,750 tariff entries across 99 chapters. No pagination helpers, no release versioning, just straightforward data. I realized that a chapter-based ingest pattern would work well—download one chapter at a time, parse it, store it. It's a pattern that scales linearly and gives you natural checkpoints.
 
-## Chapter 1: Discovery & First Steps (Early Development)
-
-### The Starting Point: Learning the API
-
-The project began with **data discovery and learning** — understanding the US International Trade Commission's public API structure. The first commits reflect a classic spike pattern: explore the API surface, figure out what's available, and establish what the data looks like.
-
-```
-838ce47 docs: add data discovery learning + update plan with correct API endpoint
-50f9b5c feat: step1-2 complete ingest — chapter-based API with 28,750 unique entries
-```
-
-✨ This wasn't a "let me build everything" moment. It was **"let me understand what we're working with."** The discovery revealed:
-- The USITC exposes a flat JSON API (no pagination helpers, no release versions)
-- ~28,750 unique tariff entries across 99 chapters
-- A chapter-based search pattern is the right model for ingestion
-
-**Root cause of early confusion**: The original plan referenced `/exportSections?format=JSON`, but that endpoint was no longer operational. The discovery phase found the real endpoint: `https://hts.usitc.gov/reststop/search?keyword=chapter%20XX`.
+I documented this learning in those early commits because I knew future me would forget the dead ends. The discovery phase isn't flashy work, but it's work that matters. You can't build something solid without understanding what you're actually building with.
 
 ---
 
-## Chapter 2: Building the Core Stack (Steps 1–4)
+## Building Three Layers
 
-### The CLI Foundation
+Once I understood the API shape, I needed to figure out how to make this thing actually useful. I wanted it to work in three different contexts: from the command line for developers, as an MCP server for Claude, and eventually as a browsable interface. But first things first—I had to build the foundation.
 
-With API understanding in hand, the next phase built **three layers simultaneously**:
+The ingest script was straightforward: hit the API for all 99 chapters, parse the JSON, and store everything in SQLite. I created three tables—chapters, hts_entries, and data_freshness—to capture both the tariff data and some metadata about when things were last checked. About 134,000 entries in total. It's a lot of data, but SQLite handles it fine.
 
-```
-8185c98 feat: step1-2 complete ingest — chapter-based API with 28,750 unique entries
-8185c98 feat: step4 mcp — sqlite-backed MCP server with stdio transport
-454b20e feat: step5-6 refresh script, test suite, and fix JSON output bug
-```
+The CLI came next. I used Typer because I'd worked with it before and it just gets out of the way. Commands for searching by keyword, looking up exact codes, browsing by chapter, getting metadata. Then an MCP server that exposed the same queries over stdio for Claude integration. The MCP work taught me something about JSON handling—I learned from Claude that using `print()` directly instead of Rich's console formatting keeps ANSI control characters out of the JSON output. It's a small detail, but it matters for integration.
 
-**Step 1–2: Data Ingest** — Wrote `scripts/ingest.py` to:
-- Download all 99 chapters from the API (parallelizable, but serial for this phase)
-- Parse JSON into a SQLite schema with three tables: `chapters`, `hts_entries`, `data_freshness`
-- Store ~134K tariff entries with rates, units, and footnotes
-
-**Step 4: MCP Server** — Built `mcp_server.py` to:
-- Expose five tools over MCP stdio transport (designed for Claude Desktop integration)
-- Follow MCP conventions: return JSON strings, not objects
-- Enable AI agents to query tariffs without calling the HTTP API directly
-
-**Step 5–6: CLI & Tests** — Added `hts.py` with Typer:
-- `search` command for keyword lookups
-- `code` command for exact tariff code retrieval
-- `chapter` and `chapters` for browsing
-- `info` for metadata queries
-- Comprehensive pytest suite using in-memory SQLite fixtures
-
-❓ **A design question emerged early**: How should JSON output work? I decided (with Claude's input) to use `print()` directly instead of Rich's `console.print()` to avoid ANSI control character injection. Claude caught that control characters could sneak in through Rich's formatting—a subtle gotcha I might have missed. This pattern became foundational for all JSON endpoints.
+Tests were important here too. I built the test suite early, using in-memory SQLite fixtures so tests run fast and don't depend on the actual database state. That pattern paid off immediately when refactoring came later.
 
 ---
 
-## Chapter 3: Safety & Data Integrity (Parallel Ingest & Freshness Tracking)
+## The Freshness Problem
 
-### Adding Confidence to Refresh Cycles
+After the initial ingest worked, I started thinking about what happens when tariff data changes. The USITC doesn't expose revision numbers or release dates, so I needed another way to know if the data is stale. This is where the idea of content hashing came in—hash each chapter, compare against what we've got stored, and only re-ingest if something actually changed.
 
-As the project matured, a critical need surfaced: **How do I know when tariff data has changed?** The USITC API doesn't expose revision numbers or release dates, so Claude and I designed a **content-hash based freshness detection system**.
+I built the refresh script to do this in parallel. It spins up a thread pool, hashes all 99 chapters at once, and compares hashes to what's in the database. If a chapter's content is different, we re-ingest that chapter. I also started tracking two timestamps per chapter: when we last checked, and when it actually changed. That distinction matters—it tells you whether something is truly stale or just old data you've already validated.
 
-```
-42eca52 feat: add per-chapter freshness tracking and data revision metadata
-0903c62 feat: parallelize chapter fetching and add safe refresh with backup
-4b44dc0 test: add red-green TDD tests for parallel ingest and safe refresh
-77bada5 refactor: extract shared chapter hashing and fix refresh duration tracking
-5758e13 feat: add backup/restore safety and parallel ingest
-```
+Before any refresh operation, the script creates a backup. It's a simple thing, but it means if something goes wrong, we can recover. I've learned that defensive programming isn't paranoia—it's just respecting that production systems have higher stakes than development. The backup costs almost nothing and buys a lot of peace of mind.
 
-💭 **The thinking here**: Instead of blindly re-ingesting, Claude and I settled on:
-1. Hash all 99 chapters in parallel using `ThreadPoolExecutor`
-2. Compare against stored hashes in the `chapters` table
-3. Track two timestamps per chapter: `last_checked_at` (when I checked) vs. `last_changed_at` (when it actually differed)
-4. Only re-ingest chapters that changed
-5. **Backup the database before any refresh** — safety first
-
-This approach is defensive: it prevents accidental data loss during refresh cycles and gives operators visibility into freshness.
-
-✨ **Key learnings** documented in CLAUDE.md:
-- Refresh is **not** an ingest; refresh validates and updates, ingest rebuilds from scratch
-- Parallelization cuts refresh time from ~99 API calls to ~4-5 concurrent requests
-- Content hashing is the alternative since the USITC doesn't version their API responses
+This is where I learned to distinguish between ingest and refresh. Ingest is destructive—it rebuilds everything from scratch. Refresh is careful—it validates, updates selectively, and preserves the database. They're different operations with different failure modes, and treating them as such made the system safer.
 
 ---
 
-## Chapter 4: Hardening & Quality (CI/Docker/Shared Library)
+## Stopping to Refactor
 
-### From Spike to Production Code
+At some point, I noticed I was duplicating query logic between the CLI and the MCP server. Both needed to do the same database operations, just with different invocation patterns. This bothered me more than it should have, so I stopped feature work and extracted a shared core library.
 
-With core features working, Claude and I shifted focus to **reliability, testability, and code reuse**:
+Creating `hts_core/` with a configurable database path meant both interfaces could import the same functions. The CLI and MCP server both use it now, and when I need to change how queries work, I change them once. It's one of those refactorings that seems optional until you need to update something three months later and realize how grateful you should have been to past you.
 
-```
-5e2c637 Harden CI pipeline and Docker build
-68d9190 test: add red-green TDD tests for CI and Docker hardening
-17f6ffa Merge pull request #5 from francisfuzz/feat/ci-docker-hardening
+I also hardened the Docker setup and added CI. The Dockerfile is lean—just what's needed, running as a non-root user. GitHub Actions runs the test suite on every commit. It's all pretty standard stuff, but it's the kind of thing that matters when you want people to trust what you've built. You're saying: this code doesn't just work on my machine, it works reliably, and if it breaks I'll know immediately.
 
-c8616e5 refactor: extract shared core library with configurable DB path
-08261da test: add red-green TDD tests for hts_core shared library
-53cb54f Merge pull request #6 from francisfuzz/feat/core-library
-```
-
-**CI/Docker Hardening** included:
-- GitHub Actions workflow to build and test on every commit
-- Non-root Docker user for security
-- Lean `Dockerfile` (~200MB base image, minimal layers)
-- Healthchecks and reproducible builds
-
-**Core Library Extraction** (the big refactor):
-- Created `hts_core/` as a shared library with configurable database paths
-- Both CLI (`hts.py`) and MCP server (`mcp_server.py`) now import from core
-- Reduced duplication: one query interface, two invocation patterns
-- Made testing modular: fixture can swap in different database paths
-
-🙇🏽 **Why this matters**: Code duplication is a silent killer. By extracting the core, future changes (e.g., schema updates, new query patterns) only need to happen once.
+These two things—the refactor and the CI setup—aren't glamorous work. But they're the difference between a spike that works and a project that actually stays working.
 
 ---
 
-## Chapter 5: Backup & Parallel Safety (Merge #9)
+## The Datasette Pivot
 
-### Production-Ready Refresh
+Claude suggested something that changed how I thought about this project: "What if we exposed this as a searchable web interface?" I'd been thinking CLI and MCP only, but that suggestion opened something up. Why shouldn't people be able to browse tariffs in a browser?
 
-```
-313cc75 Merge pull request #9 from francisfuzz/feat/backup-restore-parallel-ingest
-5758e13 feat: add backup/restore safety and parallel ingest
-```
+That's how I ended up building Datasette integration. Datasette is remarkable because it lets you publish a SQLite database as a web interface without writing any web code. You just point it at your database, and suddenly you have a searchable, browsable interface with full-text search on tariff descriptions. No Flask routes, no HTML templates, no API endpoints to maintain.
 
-Merged the **backup/restore safety layer** and **parallel ingest optimization**:
-- `refresh.py` creates a backup before modifying the database
-- If refresh fails, the backup is available for restore
-- Ingest is now parallelizable (though CLI runs serial for simplicity)
-- Refresh duration is tracked: each run is logged with start/end times
+The integration taught me some hard lessons about SQLite and Datasette. If you create FTS5 indexes with raw SQL, Datasette won't auto-detect them. But if you create them with `sqlite-utils`, Datasette sees them immediately. I learned that when I deployed the first version and search didn't work. I also ran into a Typer/click compatibility issue that took a minute to untangle.
+
+Getting the chapter titles right was a small thing that mattered a lot. Instead of showing "Chapter 01," the interface now shows "Live Animals" or "Copper and Articles Thereof." It's more useful, and users see actual chapter names instead of numbers. Some entries have `<i>` tags for scientific names, and I had to install `datasette-render-html` to make those render correctly instead of showing raw HTML.
+
+This pivot—from API-only to browsable web interface—is probably the thing I'm most proud of. It made the tariff data accessible to people who don't write code.
 
 ---
 
-## Chapter 6: Datasette Integration (The Web UI Era)
+## Getting the Name Right
 
-### From CLI-Only to Browsable
+At some point it became clear that `usitc-app` was the wrong name. It was descriptive—it told you what API it used—but it didn't tell you what the project actually did or why you'd want to use it. I spent some time thinking about what this thing really was, and the name that emerged was `tariff-everywhere`. It's a lookup service you can use everywhere: in your terminal, in Claude, in a web browser. Anywhere you might need to understand a tariff code.
 
-A major pivot happened here. Claude suggested: **"What if we exposed this as a searchable web interface?"** It was a turning point—I'd been thinking CLI + MCP only, but Claude's idea opened up a whole new consumption mode.
-
-```
-a7ec23f feat: add Datasette support with FTS5 search and metadata
-f0cf6b3 fix: FTS search, chapter titles, click/typer compat
-0fe3a12 feat: Datasette support with FTS5 search (#11)
-
-6fa4933 docs: add Datasette web interface to main usage options
-ee29e33 docs: document Datasette integration and key learnings
-```
-
-✨ **The Datasette choice** unlocked:
-- **Full-text search** (FTS5) on tariff descriptions
-- **Browsable web UI** without writing a single Flask route
-- **Public deployment** via Datasette's Fly.io integration
-- **Zero maintenance**: Datasette handles query optimization, UI, caching
-
-💅🏽 **Critical learnings** (saved in CLAUDE.md for future maintainers):
-- Datasette **only auto-detects FTS5 if created via `sqlite-utils`**, not raw SQL
-- Typer 0.15.x breaks with click 8.3+; pin `typer~=0.24.0`
-- The `chapters` table uses `label_column: "description"` to show human-readable titles ("Copper and Articles Thereof") instead of chapter numbers
-- 1,535 entries have `<i>` tags for scientific names; the `datasette-render-html` plugin renders them
+The rename was methodical. First the repository references, then the live web app URL, then the deployment configurations. I could have left some stray references to the old name, but that's the kind of thing that bugs future maintainers. If you're going to change something, change it all the way through.
 
 ---
 
-## Chapter 7: Naming & Rebranding (The "tariff-everywhere" Era)
+## Documentation and Licensing
 
-### From "usitc-app" to "tariff-everywhere"
+A project isn't really done until someone else can use it and maintain it. I spent time rewriting the README to guide people through the three different ways they could use tariff-everywhere: from the command line if they're a developer, as an MCP server if they're using Claude, or as a web interface if they just want to look something up. Each mode has its own documentation, and they're all starting from the same place.
 
-```
-ef5395e Rename repository references from usitc-app to tariff-everywhere (#14)
-d1ef4d3 Fix web app URL and update Datasette link
-0afaba4 docs: update Fly.io deployment to use tariff-everywhere app name
-e3682a2 Enable Dependabot updates for pip, Docker, and GitHub Actions (#20)
-```
+CLAUDE.md became the deep documentation—here's the architecture, here are the patterns, here's how to debug when things go wrong, here's how to deploy. I did this because I know that future work on this project will probably involve Claude, and whoever touches the code next should understand the decisions that were made.
 
-A thoughtful rename. The original name (`usitc-app`) was descriptive but didn't convey purpose. The new name (`tariff-everywhere`) tells users **what it is**: a tariff lookup service you can deploy anywhere (local CLI, MCP integration, web interface).
+I also chose the Hippocratic License. It's an open-source license that protects against the code being used to cause harm. I wanted the code to be open—that's important to me—but I also wanted some guardrails. The Hippocratic License let me do both.
 
-📝 **Observation**: The commit sequence shows deliberate cleanup:
-1. First rename the repository references
-2. Fix the live web app URL
-3. Update deployment configurations
-4. Enable dependency automation
-
-This is the mark of **proactive ownership** — taking time to tidy up after a major decision, rather than leaving stray references for future maintainers.
+Licensing and documentation are the things people don't think about when they're building something, but they matter so much for longevity. A project without documentation dies. A project without thoughtful licensing can end up in places you never intended.
 
 ---
 
-## Chapter 8: Sustainability & Documentation (Current State)
+## Building With AI
 
-### From "Cool Project" to "Here's How to Use It"
+The interesting thing about this project is that Claude wasn't added at the end—Claude was a thinking partner the whole way through. When I was confused about the API, Claude helped me understand what I was looking at. When I missed an ANSI control character vulnerability, Claude caught it. When I was stuck in a CLI-only mindset, Claude asked "what about a web interface?" and changed the whole trajectory of the project.
 
-The final phase emphasized **discoverability and handoff clarity**:
-
-```
-796a430 docs: rewrite README with beginner-friendly setup guides
-2e73140 docs: update CLAUDE.md to reflect current repo state
-9f720a9 docs: add project audit report covering CI, Docker, code quality, and reuse
-c12c0c2 docs: add Hippocratic License 3.0 (HL3-FULL) and badge
-```
-
-✨ **What changed**:
-- README rewrote to guide users through **three consumption modes**: CLI (local dev), MCP (Claude Desktop), and Datasette (web browsing)
-- CLAUDE.md became comprehensive: architecture, patterns, common tasks, debugging, deployment
-- Added a **project audit report** documenting code quality, CI/Docker health, and reuse metrics
-- Chose **Hippocratic License 3.0** to protect against harmful use while keeping the code open
-
-❓ **Why this matters**: Documentation is the bridge between "I built something cool" and "someone else can maintain this." I invested time (with Claude's help structuring and refining) to ensure the next person (or the next version of myself) has a clear mental model.
+The later commits show preparing the repository for ongoing work with Claude. Adding `.claude/` to gitignore, documenting patterns and decisions in a way that makes sense to an AI reading the codebase. This isn't about "AI-assisted development" as a buzzword—it's about recognizing that I work better when I have someone smart to think with.
 
 ---
 
-## Chapter 9: AI Integration & Modern Practices (Final Commits)
+## What This Whole Thing Taught Me
 
-### Embracing Claude Code & Modern Development
+**Defensive thinking matters.** Every feature I added, I asked "what goes wrong?" first. Backups before mutations. Hashes to detect changes. Tests that run in isolation. None of this is glamorous, but it's the difference between a project you can trust and one you can't.
 
-```
-9a9786c docs: add tariff-everywhere banner to README and fix filename typo
-3d5e38a chore: add .claude/ to .gitignore and remove from tracking
-```
+**Refactoring when you spot duplication pays dividends.** The `hts_core/` extraction wasn't required, but it meant that later changes happened in one place instead of three. That matters.
 
-The closing commits reflect **modern development practices**:
-- Integrated Claude Code into the workflow (added to .gitignore for session artifacts)
-- Fixed edge case bugs (filename typo) and improved visibility with a project banner
-- Prepared the repository for collaborative AI-assisted development
+**Naming is important.** `usitc-app` was technically correct and completely unmemorable. `tariff-everywhere` tells you what the project does and how it works. Spend the time on names.
 
-💭 **The narrative arc**: Started with a learning spike, built production infrastructure with Claude as a thinking partner, discovered a better UI paradigm (Datasette), renamed intentionally, documented obsessively, and prepared the repo for future Claude sessions. This wasn't "adding AI at the end"—Claude was embedded from the start.
+**Three modes of interaction beat one.** A CLI is useful for developers. An MCP server is useful for Claude users. A web interface is useful for everyone else. The same underlying code, three different entry points. That's good design.
+
+**Documentation is not optional.** Not because it's a checkbox, but because the next person to touch this code—including me, three months from now—needs to understand why decisions were made. CLAUDE.md isn't a reference manual, it's the paper trail of thinking.
 
 ---
 
-## Themes Across the Timeline
+## What Remains
 
-### 🟡 Defensive Programming
-From backup/restore safety to content-hash freshness tracking, every feature considered "what goes wrong?" before shipping.
+The project is functional. All three modes work—CLI, MCP, web. Tests pass. The Datasette instance is live. The code is documented. The decisions are recorded. If I walked away today, someone could pick this up and maintain it. That feels complete.
 
-### ✨ Proactive Documentation
-Rather than writing docs after the fact, Claude and I documented decisions, learnings, and deployment gotchas as we went. CLAUDE.md grew alongside the code—Claude would flag "future you will need to know this" moments, and I'd commit them immediately.
+What I've tried to do is leave the best gift a developer can leave: a codebase where decisions are explained, not just implemented. Where defensive patterns aren't random but intentional. Where someone—whether that's me in a few months or someone else entirely—can understand not just what the code does, but why it was built that way.
 
-### 💭 Collaborative Refactoring
-The core library extraction (`hts_core/`) showed a willingness to pause feature work and improve code structure. This paid dividends later.
-
-### 🙇🏽 User Empathy
-Three UI modes (CLI, MCP, web) mean tariff-everywhere meets users where they are—in the terminal, in Claude, or in a browser.
-
-### 📝 Measured Growth
-The project didn't try to "do everything at once." Each phase built on the prior: ingest → refresh → CI/Docker → Datasette → documentation → sustainability.
-
----
-
-## Where It Stands Today
-
-**tariff-everywhere** is:
-- ✅ **Functionally complete** — all three UI modes (CLI, MCP, Datasette) are live and tested
-- ✅ **Operationally safe** — backup/restore, parallel ingest, per-chapter freshness tracking
-- ✅ **Well-documented** — CLAUDE.md, README, deployment guides, audit report
-- ✅ **Production-deployed** — Datasette instance live on Fly.io at [tariff-everywhere.fly.dev](https://tariff-everywhere.fly.dev)
-- ✅ **Maintainable** — shared core library, comprehensive tests, clear patterns
-
-The next person to touch this code (or Claude in a future session) will find a **clear mental model, defensive guardrails, and a paper trail of decisions**. That's the best gift a developer can leave. ✌🏽
+That's the real measure of a finished project.
