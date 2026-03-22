@@ -1,7 +1,6 @@
 """Shared test fixtures for HTS tests."""
 
 import sqlite3
-import tempfile
 import os
 import pytest
 from pathlib import Path
@@ -306,19 +305,12 @@ def _create_test_db(db_path):
 
 @pytest.fixture
 def test_db(tmp_path):
-    """Create a temporary test database and patch DB_PATH / get_db for both hts.py and mcp_server.py."""
+    """Create a temporary test database and patch hts_core.get_db for all consumers."""
     db_path = tmp_path / "hts.db"
     _create_test_db(db_path)
 
-    # Create the data/ directory structure that hts.py expects
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    # Symlink or copy to data/hts.db path
-    data_db_path = data_dir / "hts.db"
-    import shutil
-    shutil.copy2(str(db_path), str(data_db_path))
+    def _test_get_db(db_path_arg=None):
+        return sqlite3.connect(str(db_path))
 
-    with patch("hts.get_db", lambda: sqlite3.connect(str(db_path))):
-        with patch("mcp_server.get_db", lambda: sqlite3.connect(str(db_path))):
-            with patch("mcp_server.DB_PATH", db_path):
-                yield db_path
+    with patch("hts_core.get_db", _test_get_db):
+        yield db_path

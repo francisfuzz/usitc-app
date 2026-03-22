@@ -10,23 +10,19 @@ import typer
 from rich.table import Table
 from rich.console import Console
 
+import hts_core
+
 app = typer.Typer(help="HTS (Harmonized Tariff Schedule) lookup tool")
 console = Console()
 
 
 def get_db() -> sqlite3.Connection:
-    """Get database connection."""
-    db_path = Path("data/hts.db")
-    if not db_path.exists():
-        console.print("[red]Error: data/hts.db not found. Run ingest first.[/red]")
+    """Get database connection, exiting with a friendly error if missing."""
+    try:
+        return hts_core.get_db()
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
-    return sqlite3.connect(str(db_path))
-
-
-def format_entry_as_dict(row: tuple) -> dict:
-    """Convert database row to dictionary."""
-    columns = ["id", "hts_code", "indent", "description", "unit", "general_rate", "special_rate", "column2_rate", "chapter_id"]
-    return dict(zip(columns, row))
 
 
 def format_entry_for_table(row: tuple) -> list:
@@ -50,18 +46,7 @@ def search(
     """Search HTS entries by keyword in description."""
     db = get_db()
     try:
-        cursor = db.cursor()
-
-        # Search in description column (case insensitive)
-        query = """
-            SELECT id, hts_code, indent, description, unit, general_rate, special_rate, column2_rate, chapter_id
-            FROM hts_entries
-            WHERE description LIKE ?
-            LIMIT ?
-        """
-        search_term = f"%{keyword}%"
-        cursor.execute(query, (search_term, limit))
-        rows = cursor.fetchall()
+        rows = hts_core.search_entries(db, keyword, limit)
 
         if not rows:
             if json_output:
@@ -71,7 +56,7 @@ def search(
             return
 
         if json_output:
-            results = [format_entry_as_dict(row) for row in rows]
+            results = [hts_core.row_to_cli_dict(row) for row in rows]
             print(json.dumps(results, indent=2))
         else:
             table = Table(title=f"Search results for '{keyword}'")
@@ -98,16 +83,7 @@ def code(
     """Look up a specific HTS code."""
     db = get_db()
     try:
-        cursor = db.cursor()
-
-        query = """
-            SELECT id, hts_code, indent, description, unit, general_rate, special_rate, column2_rate, chapter_id
-            FROM hts_entries
-            WHERE hts_code = ?
-            LIMIT 1
-        """
-        cursor.execute(query, (hts_code,))
-        row = cursor.fetchone()
+        row = hts_core.get_entry(db, hts_code)
 
         if not row:
             if json_output:
@@ -117,7 +93,7 @@ def code(
             return
 
         if json_output:
-            result = format_entry_as_dict(row)
+            result = hts_core.row_to_cli_dict(row)
             print(json.dumps(result, indent=2))
         else:
             table = Table(title=f"HTS Code: {hts_code}")
@@ -153,33 +129,20 @@ def chapter(
     """List all entries in a chapter."""
     db = get_db()
     try:
-        cursor = db.cursor()
-
-        # Pad chapter number to 2 digits
-        chapter_num = chapter_num.zfill(2)
-
-        query = """
-            SELECT id, hts_code, indent, description, unit, general_rate, special_rate, column2_rate, chapter_id
-            FROM hts_entries
-            WHERE hts_code LIKE ?
-            ORDER BY hts_code
-        """
-        search_pattern = f"{chapter_num}%"
-        cursor.execute(query, (search_pattern,))
-        rows = cursor.fetchall()
+        rows = hts_core.list_chapter_entries(db, chapter_num)
 
         if not rows:
             if json_output:
                 print(json.dumps([]))
             else:
-                console.print(f"[yellow]No entries found for chapter {chapter_num}[/yellow]")
+                console.print(f"[yellow]No entries found for chapter {chapter_num.zfill(2)}[/yellow]")
             return
 
         if json_output:
-            results = [format_entry_as_dict(row) for row in rows]
+            results = [hts_core.row_to_cli_dict(row) for row in rows]
             print(json.dumps(results, indent=2))
         else:
-            table = Table(title=f"Chapter {chapter_num} ({len(rows)} entries)")
+            table = Table(title=f"Chapter {chapter_num.zfill(2)} ({len(rows)} entries)")
             table.add_column("HTS Code", style="cyan")
             table.add_column("Description", style="green")
             table.add_column("General Rate", style="magenta")
@@ -202,15 +165,7 @@ def chapters(
     """List all chapters with descriptions and entry counts."""
     db = get_db()
     try:
-        cursor = db.cursor()
-        cursor.execute(
-            """SELECT c.number, c.description, COUNT(h.id) as entry_count
-               FROM chapters c
-               LEFT JOIN hts_entries h ON c.id = h.chapter_id
-               GROUP BY c.id
-               ORDER BY c.number"""
-        )
-        rows = cursor.fetchall()
+        rows = hts_core.get_all_chapters(db)
 
         if json_output:
             results = [
@@ -224,7 +179,8 @@ def chapters(
             table.add_column("Description", style="green")
             table.add_column("Entries", style="magenta", justify="right")
 
-            for number, description, entry_count in rows:
+            for row in rows:
+                number, description, entry_count = row[0], row[1], row[2]
                 table.add_row(number, description or "", str(entry_count))
 
             console.print(table)
