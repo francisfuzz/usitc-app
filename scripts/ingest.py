@@ -7,6 +7,7 @@ import requests
 import sys
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from scripts.hashing import compute_chapter_hash
@@ -62,8 +63,8 @@ def create_schema(db):
     db.commit()
 
 
-def fetch_and_ingest_chapter(db, chapter_num: int, now: str | None = None) -> tuple:
-    """Fetch a chapter from API and insert into database."""
+def fetch_chapter(chapter_num: int) -> tuple:
+    """Fetch a chapter from the API. Returns (chapter_num, data) or (chapter_num, None) on error."""
     try:
         chapter_str = f"{chapter_num:02d}"
         url = f"https://hts.usitc.gov/reststop/search?keyword=chapter%20{chapter_str}&limit=5000"
@@ -73,87 +74,92 @@ def fetch_and_ingest_chapter(db, chapter_num: int, now: str | None = None) -> tu
 
         if not isinstance(data, list):
             print(f"Warning: Chapter {chapter_str} returned non-list", file=sys.stderr)
-            return 0, 0
+            return chapter_num, None
 
-        cursor = db.cursor()
-        timestamp = now or datetime.now(timezone.utc).isoformat()
-        content_hash = compute_chapter_hash(data)
-
-        # Insert chapter with content hash and timestamps
-        cursor.execute(
-            """INSERT OR IGNORE INTO chapters
-               (number, description, content_hash, last_changed_at, last_checked_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (chapter_str, f"Chapter {chapter_str}", content_hash, timestamp, timestamp)
-        )
-
-        # Get chapter id
-        cursor.execute("SELECT id FROM chapters WHERE number = ?", (chapter_str,))
-        chapter_row = cursor.fetchone()
-        chapter_id = chapter_row[0] if chapter_row else None
-
-        entries_inserted = 0
-        duplicates_skipped = 0
-
-        for entry in data:
-            hts_code = entry.get("htsno")
-            if not hts_code:
-                continue
-
-            hts_code = str(hts_code).strip()
-
-            description = entry.get("description") or ""
-            if description:
-                description = str(description).strip()
-
-            indent_val = entry.get("indent", 0)
-            if isinstance(indent_val, str):
-                indent = int(indent_val) if indent_val.isdigit() else 0
-            else:
-                indent = int(indent_val) if indent_val else 0
-
-            units = entry.get("units")
-            unit = ""
-            if isinstance(units, list) and units:
-                unit = str(units[0]).strip() if units[0] else ""
-
-            general_rate = entry.get("general") or ""
-            if general_rate:
-                general_rate = str(general_rate).strip()
-
-            special_rate = entry.get("special") or ""
-            if special_rate:
-                special_rate = str(special_rate).strip()
-
-            column2_rate = entry.get("other") or ""
-            if column2_rate:
-                column2_rate = str(column2_rate).strip()
-
-            footnotes_data = entry.get("footnotes")
-            footnotes_str = ""
-            if footnotes_data:
-                try:
-                    footnotes_str = json.dumps(footnotes_data)
-                except (TypeError, ValueError):
-                    pass
-
-            try:
-                cursor.execute(
-                    """INSERT INTO hts_entries
-                       (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes, chapter_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes_str, chapter_id)
-                )
-                entries_inserted += 1
-            except sqlite3.IntegrityError:
-                duplicates_skipped += 1
-
-        db.commit()
-        return entries_inserted, duplicates_skipped
+        return chapter_num, data
 
     except Exception as e:
-        print(f"Error with chapter {chapter_num:02d}: {e}", file=sys.stderr)
-        return 0, 0
+        print(f"Error fetching chapter {chapter_num:02d}: {e}", file=sys.stderr)
+        return chapter_num, None
+
+
+def ingest_chapter(db, chapter_num: int, data: list, now: str | None = None) -> tuple:
+    """Insert a chapter's data into the database. Returns (entries_inserted, duplicates_skipped)."""
+    chapter_str = f"{chapter_num:02d}"
+    cursor = db.cursor()
+    timestamp = now or datetime.now(timezone.utc).isoformat()
+    content_hash = compute_chapter_hash(data)
+
+    # Insert chapter with content hash and timestamps
+    cursor.execute(
+        """INSERT OR IGNORE INTO chapters
+           (number, description, content_hash, last_changed_at, last_checked_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (chapter_str, f"Chapter {chapter_str}", content_hash, timestamp, timestamp)
+    )
+
+    # Get chapter id
+    cursor.execute("SELECT id FROM chapters WHERE number = ?", (chapter_str,))
+    chapter_row = cursor.fetchone()
+    chapter_id = chapter_row[0] if chapter_row else None
+
+    entries_inserted = 0
+    duplicates_skipped = 0
+
+    for entry in data:
+        hts_code = entry.get("htsno")
+        if not hts_code:
+            continue
+
+        hts_code = str(hts_code).strip()
+
+        description = entry.get("description") or ""
+        if description:
+            description = str(description).strip()
+
+        indent_val = entry.get("indent", 0)
+        if isinstance(indent_val, str):
+            indent = int(indent_val) if indent_val.isdigit() else 0
+        else:
+            indent = int(indent_val) if indent_val else 0
+
+        units = entry.get("units")
+        unit = ""
+        if isinstance(units, list) and units:
+            unit = str(units[0]).strip() if units[0] else ""
+
+        general_rate = entry.get("general") or ""
+        if general_rate:
+            general_rate = str(general_rate).strip()
+
+        special_rate = entry.get("special") or ""
+        if special_rate:
+            special_rate = str(special_rate).strip()
+
+        column2_rate = entry.get("other") or ""
+        if column2_rate:
+            column2_rate = str(column2_rate).strip()
+
+        footnotes_data = entry.get("footnotes")
+        footnotes_str = ""
+        if footnotes_data:
+            try:
+                footnotes_str = json.dumps(footnotes_data)
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            cursor.execute(
+                """INSERT INTO hts_entries
+                   (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes, chapter_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (hts_code, indent, description, unit, general_rate, special_rate, column2_rate, footnotes_str, chapter_id)
+            )
+            entries_inserted += 1
+        except sqlite3.IntegrityError:
+            duplicates_skipped += 1
+
+    return entries_inserted, duplicates_skipped
 
 
 def main():
@@ -167,22 +173,35 @@ def main():
         print("Creating database schema...")
         create_schema(db)
 
-        print("Fetching and ingesting HTS data from all 99 chapters...")
+        print("Fetching HTS data from all 99 chapters (parallel)...")
         start_time = time.time()
         now = datetime.now(timezone.utc).isoformat()
+        max_workers = int(os.getenv("HTS_INGEST_WORKERS", "10"))
 
+        # Phase 1: Fetch all chapters in parallel
+        chapter_data = {}
+        fetch_errors = 0
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(fetch_chapter, ch): ch for ch in range(1, 100)}
+            for future in as_completed(futures):
+                chapter_num, data = future.result()
+                if data is not None:
+                    chapter_data[chapter_num] = data
+                else:
+                    fetch_errors += 1
+
+        print(f"  Fetched {len(chapter_data)} chapters ({fetch_errors} errors)")
+
+        # Phase 2: Insert into DB sequentially (SQLite is single-writer)
+        print("Inserting data into database...")
         total_entries = 0
-        total_chapters_done = 0
         total_duplicates = 0
 
-        for ch in range(1, 100):
-            entries, duplicates = fetch_and_ingest_chapter(db, ch, now=now)
+        for ch in sorted(chapter_data.keys()):
+            entries, duplicates = ingest_chapter(db, ch, chapter_data[ch], now=now)
             total_entries += entries
-            total_chapters_done += 1
             total_duplicates += duplicates
-
-            if ch % 10 == 0:
-                print(f"  Completed {ch}/99 chapters ({total_entries} entries loaded so far)...")
 
         duration = time.time() - start_time
 
@@ -191,13 +210,15 @@ def main():
             """INSERT INTO data_freshness
                (last_full_refresh, refresh_duration_secs, chapters_changed, total_chapters)
                VALUES (?, ?, ?, ?)""",
-            (now, round(duration, 2), 99, 99)
+            (now, round(duration, 2), len(chapter_data), 99)
         )
         db.commit()
 
-        print(f"Loaded {total_entries} entries across 99 chapters in {duration:.1f}s")
+        print(f"Loaded {total_entries} entries across {len(chapter_data)} chapters in {duration:.1f}s")
         if total_duplicates > 0:
             print(f"(Skipped {total_duplicates} duplicate HTS codes)")
+        if fetch_errors > 0:
+            print(f"Warning: {fetch_errors} chapters failed to fetch", file=sys.stderr)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
