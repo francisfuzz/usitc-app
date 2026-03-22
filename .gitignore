@@ -52,3 +52,6 @@ data/
 
 # MCP/Runtime files
 *.log
+
+# Claude Code
+.claude/
