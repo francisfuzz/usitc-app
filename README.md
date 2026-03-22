@@ -1,6 +1,6 @@
 [![Hippocratic License HL3-FULL](https://img.shields.io/static/v1?label=Hippocratic%20License&message=HL3-FULL&labelColor=5e2751&color=bc8c3d)](https://firstdonoharm.dev/version/3/0/full.html)
 
-# usitc-app
+# tariff-everywhere
 
 A [Harmonized Tariff Schedule](https://hts.usitc.gov/) (HTS) lookup tool. Search tariff codes, duty rates, and product classifications from the US International Trade Commission.
 
@@ -43,8 +43,8 @@ If you prefer not to use Docker, you'll need:
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/francisfuzz/usitc-app.git
-cd usitc-app
+git clone https://github.com/francisfuzz/tariff-everywhere.git
+cd tariff-everywhere
 ```
 
 ### 2. Build the Docker image
@@ -107,8 +107,8 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py search "titanium" --
 ### 1. Clone and set up a virtual environment
 
 ```bash
-git clone https://github.com/francisfuzz/usitc-app.git
-cd usitc-app
+git clone https://github.com/francisfuzz/tariff-everywhere.git
+cd tariff-everywhere
 
 python3 -m venv venv
 source venv/bin/activate   # On Windows: venv\Scripts\activate
@@ -152,7 +152,7 @@ echo "$(pwd)/data"
 Copy the output — you'll need it in the next step. It will look something like:
 
 ```
-/Users/yourname/projects/usitc-app/data
+/Users/yourname/projects/tariff-everywhere/data
 ```
 
 ### Step 2 — Edit the Claude Desktop config
@@ -163,7 +163,7 @@ Open the Claude Desktop config file:
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
-If the file doesn't exist, create it. Add the `hts` server entry, replacing `/absolute/path/to/usitc-app/data` with the path you copied above:
+If the file doesn't exist, create it. Add the `hts` server entry, replacing `/absolute/path/to/tariff-everywhere/data` with the path you copied above:
 
 ```json
 {
@@ -172,7 +172,7 @@ If the file doesn't exist, create it. Add the `hts` server entry, replacing `/ab
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "/absolute/path/to/usitc-app/data:/app/data",
+        "-v", "/absolute/path/to/tariff-everywhere/data:/app/data",
         "hts-local",
         "mcp_server.py"
       ]
@@ -314,7 +314,7 @@ The test suite uses an in-memory SQLite database with fixture data — no intern
 ## Project Structure
 
 ```
-usitc-app/
+tariff-everywhere/
 ├── hts.py                  # CLI: search, code, chapter, chapters commands
 ├── mcp_server.py           # MCP server: 4 tools, stdio transport
 ├── metadata.json           # Datasette config (titles, facets, descriptions)
