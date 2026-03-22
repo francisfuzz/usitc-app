@@ -81,6 +81,7 @@ class TestDockerfile:
 
 
 CI_PATH = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+DEPENDABOT_PATH = PROJECT_ROOT / ".github" / "dependabot.yml"
 
 
 @pytest.mark.skipif(not CI_PATH.exists(), reason=".github excluded from Docker image by .dockerignore")
@@ -97,3 +98,24 @@ class TestCIWorkflow:
         """CI must include coverage reporting."""
         content = CI_PATH.read_text()
         assert "--cov" in content, "CI workflow doesn't include coverage reporting (--cov flag)"
+
+
+@pytest.mark.skipif(not DEPENDABOT_PATH.exists(), reason=".github excluded from Docker image by .dockerignore")
+class TestDependabotConfig:
+    """Tests for Dependabot configuration."""
+
+    def test_dependabot_file_exists(self):
+        """Dependabot must be enabled with a repository config file."""
+        assert DEPENDABOT_PATH.exists(), ".github/dependabot.yml is missing"
+
+    def test_dependabot_declares_supported_ecosystems(self):
+        """Dependabot should monitor the repo's Python, Docker, and Actions dependencies."""
+        content = DEPENDABOT_PATH.read_text()
+        assert 'package-ecosystem: "pip"' in content
+        assert 'package-ecosystem: "docker"' in content
+        assert 'package-ecosystem: "github-actions"' in content
+
+    def test_dependabot_uses_root_directory(self):
+        """All dependency manifests live from the repository root/default workflow path."""
+        content = DEPENDABOT_PATH.read_text()
+        assert content.count('directory: "/"') == 3
