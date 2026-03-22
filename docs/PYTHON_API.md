@@ -33,7 +33,7 @@ docker run --rm \
   -v "$(pwd):/app" \
   -w /app \
   hts-local \
-  -c "from tariff_everywhere import lookup_code; print(lookup_code('7408.11.30'))"
+  python -c "from tariff_everywhere import lookup_code; print(lookup_code('7408.11.30'))"
 ```
 
 ## Quick start

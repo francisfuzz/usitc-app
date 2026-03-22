@@ -8,7 +8,7 @@ Python code without using the CLI or MCP server.
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 import hts_core
 
@@ -25,7 +25,6 @@ class HTSEntry(TypedDict):
     special_rate: str
     column2_rate: str
     chapter_id: int
-    footnotes: NotRequired[str]
 
 
 class ChapterSummary(TypedDict):
@@ -38,17 +37,13 @@ class ChapterSummary(TypedDict):
     last_changed_at: str | None
 
 
-def _search_entry_dicts(keyword: str, *, limit: int, db_path: str | None) -> list[HTSEntry]:
+def search_hts(keyword: str, limit: int = 10, db_path: str | None = None) -> list[HTSEntry]:
+    """Search HTS entries by keyword in the description field."""
     db = hts_core.get_db(db_path)
     try:
         return [hts_core.row_to_cli_dict(row) for row in hts_core.search_entries(db, keyword, limit=limit)]
     finally:
         db.close()
-
-
-def search_hts(keyword: str, limit: int = 10, db_path: str | None = None) -> list[HTSEntry]:
-    """Search HTS entries by keyword in the description field."""
-    return _search_entry_dicts(keyword, limit=limit, db_path=db_path)
 
 
 def lookup_code(code: str, db_path: str | None = None) -> HTSEntry | None:

@@ -49,11 +49,10 @@ def test_get_chapters_returns_counts(test_db):
 
 def test_search_hts_raises_file_not_found_for_missing_database():
     """search_hts surfaces database setup errors to callers."""
-    with patch("hts_core.get_db", side_effect=FileNotFoundError("data/hts.db not found")):
-        with patch("tariff_everywhere.hts_core.get_db", side_effect=FileNotFoundError("data/hts.db not found")):
-            try:
-                tariff_everywhere.search_hts("copper")
-            except FileNotFoundError as exc:
-                assert "not found" in str(exc)
-            else:
-                raise AssertionError("Expected FileNotFoundError")
+    with patch("tariff_everywhere.hts_core.get_db", side_effect=FileNotFoundError("data/hts.db not found")):
+        try:
+            tariff_everywhere.search_hts("copper")
+        except FileNotFoundError as exc:
+            assert "not found" in str(exc)
+        else:
+            raise AssertionError("Expected FileNotFoundError")
