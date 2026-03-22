@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**usitc-app** is a Harmonized Tariff Schedule (HTS) lookup service built in Python. It downloads tariff classification data from the US International Trade Commission's public API, stores it in SQLite, and exposes it through two interfaces:
+**tariff-everywhere** is a Harmonized Tariff Schedule (HTS) lookup service built in Python. It downloads tariff classification data from the US International Trade Commission's public API, stores it in SQLite, and exposes it through two interfaces:
 1. **CLI** (`hts.py`) — terminal-based lookups for developers
 2. **MCP Server** (`mcp_server.py`) — Model Context Protocol tools for AI agents
 
@@ -182,7 +182,7 @@ To use the HTS tools in Claude Desktop:
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "/absolute/path/to/usitc-app/data:/app/data",
+        "-v", "/absolute/path/to/tariff-everywhere/data:/app/data",
         "hts-local",
         "mcp_server.py"
       ]
