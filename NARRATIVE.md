@@ -2,7 +2,7 @@
 
 > 📝 A narrative of how **tariff-everywhere** (the HTS lookup service) grew from a discovery spike into a production-ready tool, told through git history and architectural decisions.
 >
-> Written in partnership: Frances built the vision and made every decision; Claude was the thinking partner—catching edge cases, suggesting pivots (Datasette!), and ensuring nothing was left undocumented.
+> Written in partnership: Francis built the vision and made every decision; Claude was the thinking partner—catching edge cases, suggesting pivots (Datasette!), and ensuring nothing was left undocumented.
 
 ---
 
