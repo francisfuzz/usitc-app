@@ -8,12 +8,12 @@ Four ways to use it:
 
 | Interface | Best for | Setup time |
 |-----------|----------|-----------|
-| **Web** (Datasette) | Browse, search, export without any setup | None — it's live now |
+| [**Web** (Datasette)](https://tariff-everywhere.fly.dev/) | Browse, search, export without any setup | None — it's live now |
 | **CLI** | Quick terminal lookups (`search`, `code`, `chapter`, `chapters`) | Docker or Python |
 | **MCP Server** | Giving AI agents (like Claude) access to tariff data | Docker setup |
 | **Python directly** | Development without Docker | Python 3.12+ |
 
-**🌐 Jump straight to the web app:** https://usitc-hts.fly.dev/
+**🌐 Jump straight to the web app:** https://tariff-everywhere.fly.dev/
 
 ---
 
