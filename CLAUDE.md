@@ -195,7 +195,7 @@ The server uses stdio transport (no port exposed). Claude Desktop spawns the con
 
 ## Datasette Integration
 
-**Live at:** https://usitc-hts.fly.dev/
+**Live at:** https://tariff-everywhere.fly.dev/
 
 The database is published as a public Datasette instance for browsable web access.
 
@@ -229,7 +229,7 @@ python3 -m sqlite_utils enable-fts data/hts.db hts_entries description --fts5 --
 
 # 2. Deploy (requires flyctl auth login)
 datasette publish fly data/hts.db \
-  --app="usitc-hts" \
+  --app="tariff-everywhere" \
   --metadata metadata.json \
   --install=datasette-search-all \
   --install=datasette-render-html \
