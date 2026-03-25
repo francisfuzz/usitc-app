@@ -45,41 +45,20 @@ jobs:
         id: check-changes
         run: |
           # Query database to find recently changed chapters (last 10 minutes)
-          CHANGED=$(docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
-          import sqlite3
-          import json
+          CHANGED=$(docker run --rm --user root --entrypoint python3 -v "$(pwd)/data:/app/data" hts-local -c "
+          import sqlite3, json
           from datetime import datetime, timedelta
 
           db = sqlite3.connect('/app/data/hts.db')
           db.row_factory = sqlite3.Row
-
-          # Get chapters changed in last 10 minutes
           ten_mins_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
 
-          cursor = db.execute('''
-            SELECT chapter_id, description, last_changed_at, content_hash
-            FROM chapters
-            WHERE last_changed_at > ?
-            ORDER BY chapter_id
-          ''', (ten_mins_ago,))
-
-          changed_chapters = []
-          for row in cursor:
-            changed_chapters.append({
-              'chapter_id': str(row['chapter_id']).zfill(2),
-              'description': row['description'],
-              'changed_at': row['last_changed_at'],
-              'hash': row['content_hash']
-            })
-
+          cursor = db.execute('SELECT number, description, last_changed_at, content_hash FROM chapters WHERE last_changed_at > ? ORDER BY number', (ten_mins_ago,))
+          changed_chapters = [{'number': r['number'], 'description': r['description'], 'changed_at': r['last_changed_at'], 'hash': r['content_hash']} for r in cursor]
           db.close()
 
-          if changed_chapters:
-            print(json.dumps({'changes_detected': True, 'chapters': changed_chapters}))
-          else:
-            print(json.dumps({'changes_detected': False, 'chapters': []}))
-          EOF
-          )
+          print(json.dumps({'changes_detected': bool(changed_chapters), 'chapters': changed_chapters}))
+          ")
 
           CHANGES_DETECTED=$(echo "$CHANGED" | python3 -c "import sys, json; d=json.load(sys.stdin); print('true' if d['changes_detected'] else 'false')")
 
