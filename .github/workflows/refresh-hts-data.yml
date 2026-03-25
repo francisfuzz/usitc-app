@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Build Docker image
         run: docker build -t hts-local .
@@ -32,10 +32,7 @@ jobs:
       - name: Check for changes
         id: check-changes
         run: |
-          # Get the timestamp from 5 minutes ago (window for this run)
-          FIVE_MINS_AGO=$(date -u -d '5 minutes ago' '+%Y-%m-%d %H:%M:%S')
-
-          # Query database to find recently changed chapters
+          # Query database to find recently changed chapters (last 10 minutes)
           CHANGED=$(docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
           import sqlite3
           import json
@@ -44,15 +41,15 @@ jobs:
           db = sqlite3.connect('/app/data/hts.db')
           db.row_factory = sqlite3.Row
 
-          # Get chapters changed in last 5 minutes
-          five_mins_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+          # Get chapters changed in last 10 minutes
+          ten_mins_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
 
           cursor = db.execute('''
             SELECT chapter_id, description, last_changed_at, content_hash
             FROM chapters
             WHERE last_changed_at > ?
             ORDER BY chapter_id
-          ''', (five_mins_ago,))
+          ''', (ten_mins_ago,))
 
           changed_chapters = []
           for row in cursor:
@@ -79,23 +76,39 @@ jobs:
 
       - name: Create issue for detected changes
         if: steps.check-changes.outputs.changes_detected == 'true'
-        uses: actions/create-issue@v2
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
-          title: '[HTS Data Update] Changes detected in HTS tariff data'
-          body: |
-            Changes detected in HTS tariff data during scheduled refresh.
+          script: |
+            const changed = JSON.parse(`${{ steps.check-changes.outputs.changed_chapters }}`);
+            const chapters = changed.chapters || [];
 
-            **Detection Details:**
-            - Timestamp: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            - Workflow run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            let chaptersMarkdown = '';
+            if (chapters.length > 0) {
+              chaptersMarkdown = chapters.map(ch =>
+                `- **Chapter ${ch.chapter_id}** (${ch.description}): hash changed to \`${ch.hash.substring(0, 8)}...\``
+              ).join('\n');
+            }
 
-            **Changed Chapters:**
-            ${{ steps.check-changes.outputs.changed_chapters }}
+            const body = `Changes detected in HTS tariff data during scheduled refresh.
 
-            ---
+**Detection Details:**
+- Workflow run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+- Timestamp: ${new Date().toISOString()}
 
-            ## Next Steps
-            Review the changes above. When ready, [click here to approve and deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-datasette.yml).
+**Changed Chapters:**
+${chaptersMarkdown}
 
-            @francisfuzz
-          labels: 'data-update,requires-review'
+---
+
+## Next Steps
+Review the changes above. When ready, [click here to approve and deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-datasette.yml).
+
+@francisfuzz`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '[HTS Data Update] Changes detected in HTS tariff data',
+              body: body,
+              labels: ['data-update', 'requires-review']
+            });
