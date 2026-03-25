@@ -51,6 +51,18 @@ def create_schema(db):
     cursor.execute("CREATE INDEX idx_hts_code ON hts_entries(hts_code)")
     cursor.execute("CREATE INDEX idx_description ON hts_entries(description)")
 
+    cursor.execute("DROP VIEW IF EXISTS browse_chapters")
+    cursor.execute("""
+    CREATE VIEW browse_chapters AS
+    SELECT c.number  AS chapter,
+           c.description,
+           COUNT(e.id) AS entries
+    FROM   chapters c
+    LEFT JOIN hts_entries e ON e.chapter_id = c.id
+    GROUP BY c.id
+    ORDER BY c.number
+    """)
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS data_freshness (
         id                    INTEGER PRIMARY KEY,
