@@ -20,15 +20,15 @@ jobs:
 
       - name: Ingest HTS data
         run: |
-          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+          docker run --rm --user root -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
 
       - name: Enrich chapter titles
         run: |
-          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/chapter_titles.py
+          docker run --rm --user root -v "$(pwd)/data:/app/data" hts-local scripts/chapter_titles.py
 
       - name: Rebuild FTS5 index
         run: |
-          docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
+          docker run --rm --user root -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
           import subprocess
           import sys
 
