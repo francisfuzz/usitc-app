@@ -2,7 +2,6 @@
 """MCP server exposing HTS tariff data as tools."""
 
 import json
-import os
 
 from mcp.server.fastmcp import FastMCP
 
@@ -92,8 +91,4 @@ def get_data_freshness() -> str:
 
 
 if __name__ == "__main__":
-    transport = os.getenv("MCP_TRANSPORT", "stdio")
-    if transport == "stdio":
-        mcp.run(transport="stdio")
-    else:
-        mcp.run(transport=transport, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
+    mcp.run(transport="stdio")
