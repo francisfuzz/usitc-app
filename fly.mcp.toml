@@ -1,4 +1,4 @@
-app = "hts-mcp"
+app = "tariff-everywhere-mcp"
 primary_region = "iad"
 
 [build]
