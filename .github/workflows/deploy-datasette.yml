@@ -1,0 +1,85 @@
+name: Deploy Datasette to Fly.io
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Build Docker image
+        run: docker build -t hts-local .
+
+      - name: Enrich chapter titles
+        run: |
+          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/chapter_titles.py
+
+      - name: Rebuild FTS5 index
+        run: |
+          docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
+          import subprocess
+          import sys
+
+          result = subprocess.run([
+            'sqlite-utils', 'enable-fts',
+            '/app/data/hts.db',
+            'hts_entries',
+            'description',
+            '--fts5',
+            '--replace'
+          ], cwd='/app')
+
+          sys.exit(result.returncode)
+          EOF
+
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          docker run --rm \
+            -e FLY_API_TOKEN="$FLY_API_TOKEN" \
+            -v "$(pwd)/data:/app/data" \
+            hts-local \
+            datasette publish fly \
+            data/hts.db \
+            --app="tariff-everywhere" \
+            --metadata metadata.json \
+            --install=datasette-search-all \
+            --install=datasette-render-html \
+            --setting default_page_size 50
+
+      - name: Find and update HTS data issue
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'data-update',
+              state: 'open',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 1
+            });
+
+            if (issues.length > 0) {
+              const latestIssue = issues[0];
+              const deploymentStatus = context.payload.workflow_run?.conclusion || 'success';
+              const deploymentUrl = `${context.server_url}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: latestIssue.number,
+                body: `Deployment triggered by @${context.actor} at ${new Date().toISOString()}\n\nWorkflow run: [#${context.runNumber}](${deploymentUrl})\n\nDeployment completed successfully. Datasette redeployed at https://tariff-everywhere.fly.dev/`
+              });
+            }
