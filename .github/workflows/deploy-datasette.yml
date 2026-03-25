@@ -28,32 +28,25 @@ jobs:
 
       - name: Rebuild FTS5 index
         run: |
-          docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
-          import subprocess
-          import sys
+          docker run --rm -v "$(pwd)/data:/app/data" --entrypoint sqlite-utils hts-local \
+            enable-fts /app/data/hts.db hts_entries description --fts5 --replace
 
-          result = subprocess.run([
-            'sqlite-utils', 'enable-fts',
-            '/app/data/hts.db',
-            'hts_entries',
-            'description',
-            '--fts5',
-            '--replace'
-          ], cwd='/app')
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
-          sys.exit(result.returncode)
-          EOF
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install datasette and plugins
+        run: pip install datasette datasette-publish-fly datasette-search-all datasette-render-html
 
       - name: Deploy to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          docker run --rm \
-            -e FLY_API_TOKEN="$FLY_API_TOKEN" \
-            -v "$(pwd)/data:/app/data" \
-            hts-local \
-            datasette publish fly \
-            data/hts.db \
+          datasette publish fly data/hts.db \
             --app="tariff-everywhere" \
             --metadata metadata.json \
             --install=datasette-search-all \
