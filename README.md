@@ -96,6 +96,10 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapters
 docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py --help
 ```
 
+Here's what it looks like in action:
+
+![CLI demo showing tariff-everywhere search and code lookup commands](assets/images/running-tariff-everywhere-locally.gif)
+
 Every command supports a `--json` flag for machine-readable output:
 
 ```bash
