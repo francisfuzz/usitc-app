@@ -2,8 +2,8 @@ name: Refresh HTS Data
 
 on:
   schedule:
-    # Every 6 hours at :12 mark: 00:12, 06:12, 12:12, 18:12 UTC
-    - cron: '12 */6 * * *'
+    # Once daily at 00:12 UTC
+    - cron: '12 0 * * *'
   workflow_dispatch:
 
 permissions:
