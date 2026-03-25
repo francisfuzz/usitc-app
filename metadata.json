@@ -1,6 +1,6 @@
 {
   "title": "US Harmonized Tariff Schedule",
-  "description": "Browse and search the full US HTS tariff classification data from hts.usitc.gov. Updated from the USITC public API.",
+  "description": "Browse and search the full US HTS tariff classification data from hts.usitc.gov. Updated from the USITC public API. [Source code on GitHub](https://github.com/francisfuzz/tariff-everywhere).",
   "license": "Public Domain",
   "license_url": "https://www.usitc.gov/",
   "source": "US International Trade Commission",
