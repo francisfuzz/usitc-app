@@ -32,14 +32,14 @@ jobs:
         run: |
           if [ ! -f "$(pwd)/data/hts.db" ]; then
             echo "Database not found. Running initial ingest..."
-            docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+            docker run --rm --user root -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
           else
             echo "Database found. Skipping ingest."
           fi
 
       - name: Run refresh script
         run: |
-          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
+          docker run --rm --user root -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
 
       - name: Check for changes
         id: check-changes
