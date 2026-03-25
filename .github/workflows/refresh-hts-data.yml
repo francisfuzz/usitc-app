@@ -1,0 +1,101 @@
+name: Refresh HTS Data
+
+on:
+  schedule:
+    # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changes_detected: ${{ steps.check-changes.outputs.changes_detected }}
+      changed_chapters: ${{ steps.check-changes.outputs.changed_chapters }}
+      change_summary: ${{ steps.check-changes.outputs.change_summary }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t hts-local .
+
+      - name: Run refresh script
+        run: |
+          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          # Get the timestamp from 5 minutes ago (window for this run)
+          FIVE_MINS_AGO=$(date -u -d '5 minutes ago' '+%Y-%m-%d %H:%M:%S')
+
+          # Query database to find recently changed chapters
+          CHANGED=$(docker run --rm -v "$(pwd)/data:/app/data" hts-local python3 << 'EOF'
+          import sqlite3
+          import json
+          from datetime import datetime, timedelta
+
+          db = sqlite3.connect('/app/data/hts.db')
+          db.row_factory = sqlite3.Row
+
+          # Get chapters changed in last 5 minutes
+          five_mins_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+
+          cursor = db.execute('''
+            SELECT chapter_id, description, last_changed_at, content_hash
+            FROM chapters
+            WHERE last_changed_at > ?
+            ORDER BY chapter_id
+          ''', (five_mins_ago,))
+
+          changed_chapters = []
+          for row in cursor:
+            changed_chapters.append({
+              'chapter_id': str(row['chapter_id']).zfill(2),
+              'description': row['description'],
+              'changed_at': row['last_changed_at'],
+              'hash': row['content_hash']
+            })
+
+          db.close()
+
+          if changed_chapters:
+            print(json.dumps({'changes_detected': True, 'chapters': changed_chapters}))
+          else:
+            print(json.dumps({'changes_detected': False, 'chapters': []}))
+          EOF
+          )
+
+          CHANGES_DETECTED=$(echo "$CHANGED" | python3 -c "import sys, json; d=json.load(sys.stdin); print('true' if d['changes_detected'] else 'false')")
+
+          echo "changes_detected=$CHANGES_DETECTED" >> $GITHUB_OUTPUT
+          echo "changed_chapters=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Create issue for detected changes
+        if: steps.check-changes.outputs.changes_detected == 'true'
+        uses: actions/create-issue@v2
+        with:
+          title: '[HTS Data Update] Changes detected in HTS tariff data'
+          body: |
+            Changes detected in HTS tariff data during scheduled refresh.
+
+            **Detection Details:**
+            - Timestamp: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Workflow run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            **Changed Chapters:**
+            ${{ steps.check-changes.outputs.changed_chapters }}
+
+            ---
+
+            ## Next Steps
+            Review the changes above. When ready, [click here to approve and deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-datasette.yml).
+
+            @francisfuzz
+          labels: 'data-update,requires-review'
