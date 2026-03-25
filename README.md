@@ -69,13 +69,15 @@ You should see output like:
 
 ```
 Creating database schema...
-Fetching and ingesting HTS data from all 99 chapters...
-  Completed 10/99 chapters (3214 entries loaded so far)...
-  ...
-Loaded 28750 entries across 99 chapters
+Fetching HTS data from all 99 chapters (parallel)...
+  Fetched 99 chapters (0 errors)
+Inserting data into database...
+Loaded 134019 entries across 99 chapters in 7.5s
 ```
 
 The data is saved to `data/hts.db` on your machine. You won't need to run this again unless you want to refresh the data.
+
+> **Note:** If you run the ingest again, the script skips duplicate entries, so you'll see `Loaded 0 entries` but also `Skipped 134019 duplicates` — this is normal and means your database is protected against duplicates.
 
 ### 4. Try it out
 
@@ -141,6 +143,8 @@ python hts.py chapters
 ## Connecting to Claude Desktop (MCP Server)
 
 The MCP (Model Context Protocol) server lets Claude Desktop use the HTS data directly. Once configured, you can ask Claude questions like _"What's the tariff rate for copper wire?"_ and it will look up the answer from your local database.
+
+**Note:** The MCP server runs locally on your machine (via Docker). It does not expose a network port and cannot be accessed remotely — your tariff data stays private on your device.
 
 ### Prerequisites
 
@@ -233,7 +237,7 @@ Claude will call the appropriate HTS tool and return the tariff data from your l
 
 ## Browsable Web Interface (Datasette)
 
-The HTS database is published as a live, searchable web app at **https://usitc-hts.fly.dev/** — no setup required, just open it in your browser.
+The HTS database is published as a live, searchable web app at **https://tariff-everywhere.fly.dev/** — no setup required, just open it in your browser.
 
 ### What you can do on the web interface
 
@@ -322,7 +326,7 @@ The test suite uses an in-memory SQLite database with fixture data — no intern
 ```
 tariff-everywhere/
 ├── hts.py                  # CLI: search, code, chapter, chapters commands
-├── mcp_server.py           # MCP server: 4 tools, stdio transport
+├── mcp_server.py           # MCP server: 5 tools, local stdio transport only
 ├── metadata.json           # Datasette config (titles, facets, descriptions)
 ├── scripts/
 │   ├── ingest.py           # Download + load all 99 chapters into SQLite

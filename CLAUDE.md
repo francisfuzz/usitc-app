@@ -30,6 +30,30 @@ If `data/hts.db` does not exist yet, run the ingest first:
 docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
 ```
 
+### Quick Smoke Test
+
+After building, verify the entire system works end-to-end:
+
+```bash
+# Run all tests
+docker run --rm hts-local -m pytest tests/ -v
+# Expected: 114 passed, 5 skipped
+
+# Ingest data (if data/hts.db doesn't exist)
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+# Expected: Database created with ~134K entries across 99 chapters
+
+# Verify CLI works
+docker run --rm -v "$(pwd)/data:/app/data" hts-local hts.py chapters
+# Expected: All 99 chapters listed with descriptions and entry counts
+
+# Check refresh (should be fast if data is current)
+docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
+# Expected: "Already up to date" or new chapters ingested if data changed
+```
+
+**Note on ingest idempotency:** The ingest script skips duplicate HTS codes. When re-running after data already exists, you'll see `Loaded 0 entries` but also `Skipped 134019 duplicate HTS codes` — this is normal and expected. The script won't duplicate data on subsequent runs.
+
 ## Architecture
 
 ### Data Layer
@@ -173,6 +197,8 @@ Note: The CLI SELECT queries omit `footnotes` — the `format_entry_as_dict` col
 
 ## MCP Server Integration (Claude Desktop)
 
+The MCP server runs **locally via Docker with stdio transport** — it does not expose a network port and is not deployable to a remote service. This approach keeps the tariff database private and avoids cloud infrastructure.
+
 To use the HTS tools in Claude Desktop:
 
 ```json
@@ -192,6 +218,8 @@ To use the HTS tools in Claude Desktop:
 ```
 
 The server uses stdio transport (no port exposed). Claude Desktop spawns the container, communicates over stdin/stdout, and the container exits cleanly when the session ends.
+
+**Why local-only?** Remote HTTP deployment was explored but not pursued. Stdio transport over Docker is simpler, more secure (data never leaves your machine), and eliminates infrastructure overhead.
 
 ## Datasette Integration
 
@@ -240,6 +268,7 @@ The deployment is automatic: image build (~52 MB), two machines provisioned on F
 
 ## Known Limitations
 
+- **MCP server is local-only** — No remote HTTP deployment. The MCP server only runs locally via Docker (stdio transport). This is by design: keeps data private, reduces infrastructure, and simplifies setup. If remote MCP access is needed, run Claude on the same machine as the Docker container.
 - **Single-threaded CLI** — no parallel queries; acceptable for interactive lookups
 - **No pagination in CLI search** — hardcoded limit of 10 results; use `--limit` flag to increase
 - **Revision detection is content-hash based** — `scripts/refresh.py` hashes all 99 chapters to detect changes, but cannot distinguish USITC revision numbers (the API provides none)
