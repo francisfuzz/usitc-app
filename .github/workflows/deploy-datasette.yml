@@ -18,6 +18,10 @@ jobs:
       - name: Build Docker image
         run: docker build -t hts-local .
 
+      - name: Ingest HTS data
+        run: |
+          docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/ingest.py
+
       - name: Enrich chapter titles
         run: |
           docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/chapter_titles.py
