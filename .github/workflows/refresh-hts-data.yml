@@ -76,7 +76,7 @@ jobs:
             let chaptersMarkdown = '';
             if (chapters.length > 0) {
               chaptersMarkdown = chapters.map(ch =>
-                '- **Chapter ' + ch.chapter_id + '** (' + ch.description + '): hash changed to `' + ch.hash.substring(0, 8) + '...`'
+                '- **Chapter ' + ch.number + '** (' + ch.description + '): hash changed to `' + ch.hash.substring(0, 8) + '...`'
               ).join('\n');
             }
 
