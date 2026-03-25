@@ -78,32 +78,29 @@ jobs:
         if: steps.check-changes.outputs.changes_detected == 'true'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
-          script: |
-            const changed = JSON.parse(`${{ steps.check-changes.outputs.changed_chapters }}`);
+          script: >
+            const changed = JSON.parse('${{ steps.check-changes.outputs.changed_chapters }}');
             const chapters = changed.chapters || [];
 
             let chaptersMarkdown = '';
             if (chapters.length > 0) {
               chaptersMarkdown = chapters.map(ch =>
-                `- **Chapter ${ch.chapter_id}** (${ch.description}): hash changed to \`${ch.hash.substring(0, 8)}...\``
+                '- **Chapter ' + ch.chapter_id + '** (' + ch.description + '): hash changed to `' + ch.hash.substring(0, 8) + '...`'
               ).join('\n');
             }
 
-            const body = `Changes detected in HTS tariff data during scheduled refresh.
-
-**Detection Details:**
-- Workflow run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-- Timestamp: ${new Date().toISOString()}
-
-**Changed Chapters:**
-${chaptersMarkdown}
-
----
-
-## Next Steps
-Review the changes above. When ready, [click here to approve and deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-datasette.yml).
-
-@francisfuzz`;
+            const timestamp = new Date().toISOString();
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const body = 'Changes detected in HTS tariff data during scheduled refresh.\n\n' +
+              '**Detection Details:**\n' +
+              '- Workflow run: [#${{ github.run_number }}](' + runUrl + ')\n' +
+              '- Timestamp: ' + timestamp + '\n\n' +
+              '**Changed Chapters:**\n' +
+              chaptersMarkdown + '\n\n' +
+              '---\n\n' +
+              '## Next Steps\n' +
+              'Review the changes above. When ready, [click here to approve and deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/deploy-datasette.yml).\n\n' +
+              '@francisfuzz';
 
             await github.rest.issues.create({
               owner: context.repo.owner,
