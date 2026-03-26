@@ -43,6 +43,7 @@ Five paths forward for tariff-everywhere, evaluated through two lenses: **keep i
 - **Public JSON API:** Datasette already provides this (`/hts/hts_entries.json?hts_code=7408.11.30`), but it's not documented or marketed as an API. Add CORS headers, rate limiting, and a simple docs page.
 - **Embeddable search widget:** A small JS snippet that sites can drop in to give their users tariff lookups. Think "powered by tariff-everywhere" at the bottom of an e-commerce product page or trade blog.
 - **GitHub Action:** Let other repos query tariff data in their CI — useful for compliance checks in supply chain software.
+- **MCP remote transport:** The MCP server currently runs locally via stdio. As MCP evolves toward streamable HTTP transport, the server could be deployed remotely alongside Datasette — giving AI agents direct access to tariff tools without requiring a local Docker container.
 
 **Why this matters:** This is the multiplier. Every integration point means someone else's audience discovers the data. The MCP server already proves the concept — AI agents can use your tariff data. A public API extends that to any developer.
 
