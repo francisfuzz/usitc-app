@@ -71,6 +71,7 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
 | `scripts/refresh.py` | Detect HTS data changes by hashing all 99 chapters in parallel, re-ingest if changed, track per-chapter freshness |
 | `hts.py` | CLI entrypoint (typer) with `search`, `code`, `chapter`, `chapters`, `info` commands |
 | `mcp_server.py` | Expose five tools over MCP stdio: `search_hts`, `get_code`, `list_chapter`, `get_chapters`, `get_data_freshness` |
+| `tariff_everywhere.py` | Public Python API with connection-managing wrappers for programmatic access |
 
 ### Key Patterns
 - **Database connections:** Each command opens/closes a connection in a try-finally block. No connection pooling needed for CLI/MCP (low concurrency).
@@ -152,6 +153,14 @@ python -c "import sqlite3; db = sqlite3.connect('data/hts.db'); print(db.execute
 4. Follow the DB pattern: open → execute → format → close
 5. Handle errors gracefully (return JSON error object, don't raise)
 6. Add corresponding tests in `tests/test_mcp.py`
+
+### Add or Update the Public Python API
+1. Edit `tariff_everywhere.py` to expose connection-managing functions for external callers
+2. Reuse `hts_core.py` for SQL queries and row-to-dict conversion instead of duplicating query logic
+3. Keep return values JSON-serializable dictionaries/lists so callers can export them directly
+4. Raise `FileNotFoundError` when the SQLite database is missing; return `None` or `[]` for not-found lookups
+5. Add/update tests in `tests/test_python_api.py`
+6. Update `docs/PYTHON_API.md` and the README link when the public surface changes
 
 ### Update the SQLite Schema
 1. Edit `create_schema()` in `scripts/ingest.py`

@@ -13,7 +13,7 @@ Four ways to use it:
 | [**Web** (Datasette)](https://tariff-everywhere.fly.dev/) | Browse, search, export without any setup | None — it's live now |
 | **CLI** | Quick terminal lookups (`search`, `code`, `chapter`, `chapters`) | Docker or Python |
 | **MCP Server** | Giving AI agents (like Claude) access to tariff data | Docker setup |
-| **Python directly** | Development without Docker | Python 3.12+ |
+| **Python Library** | Programmatic lookups in your own code ([docs](docs/PYTHON_API.md)) | Python 3.12+ |
 
 **🌐 Jump straight to the web app:** https://tariff-everywhere.fly.dev/
 
@@ -137,6 +137,22 @@ python hts.py code 7408.11.30
 python hts.py chapter 74
 python hts.py chapters
 ```
+
+### Python library usage
+
+You can also import the HTS lookup functions directly from Python code:
+
+```python
+from tariff_everywhere import lookup_code, search_hts
+
+entry = lookup_code("7408.11.30")
+print(entry["description"], entry["general_rate"])
+
+for result in search_hts("copper wire", limit=5):
+    print(result["hts_code"], result["description"])
+```
+
+See the full [Python API guide](docs/PYTHON_API.md) for setup, return value structure, error handling, and CSV/JSON export examples.
 
 ---
 
