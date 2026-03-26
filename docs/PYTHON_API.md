@@ -7,8 +7,8 @@ Use `tariff_everywhere.py` when you want to query HTS data from your own Python 
 ### Local Python
 
 ```bash
-git clone https://github.com/francisfuzz/usitc-app.git
-cd usitc-app
+git clone https://github.com/francisfuzz/tariff-everywhere.git
+cd tariff-everywhere
 
 python3 -m venv venv
 source venv/bin/activate
@@ -33,7 +33,7 @@ docker run --rm \
   -v "$(pwd):/app" \
   -w /app \
   hts-local \
-  python -c "from tariff_everywhere import lookup_code; print(lookup_code('7408.11.30'))"
+  -c "from tariff_everywhere import lookup_code; print(lookup_code('7408.11.30'))"
 ```
 
 ## Quick start
