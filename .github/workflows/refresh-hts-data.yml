@@ -73,9 +73,11 @@ jobs:
       - name: Create issue for detected changes
         if: steps.check-changes.outputs.changes_detected == 'true'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          CHANGED_CHAPTERS: ${{ steps.check-changes.outputs.changed_chapters }}
         with:
           script: >
-            const changed = JSON.parse('${{ steps.check-changes.outputs.changed_chapters }}');
+            const changed = JSON.parse(process.env.CHANGED_CHAPTERS);
             const chapters = changed.chapters || [];
 
             let chaptersMarkdown = '';
