@@ -79,6 +79,7 @@ docker run --rm -v "$(pwd)/data:/app/data" hts-local scripts/refresh.py
 - **JSON output:** CLI uses `print()` (not Rich `console.print()`) for all JSON output to avoid ANSI control character injection. Rich is only used for table display.
 - **MCP tools:** Return JSON strings (not objects), matching MCP SDK conventions. Tool docstrings are exposed as help text to Claude.
 - **Revision detection:** `scripts/refresh.py` hashes all 99 chapters in parallel (`ThreadPoolExecutor`) and compares against stored hashes in the `chapters` table. Since `/reststop/releases` returns 404, this content-hash approach is the alternative. Per-chapter `last_checked_at` and `last_changed_at` timestamps distinguish "we looked" from "it was different."
+- **Docker entrypoint is `python`:** The Dockerfile uses `ENTRYPOINT ["python"]`, so all arguments passed to `docker run ... hts-local <args>` become arguments to `python`. Script paths (e.g., `scripts/ingest.py`) work directly, but installed CLI tools like `datasette` must be invoked with `-m` (e.g., `-m datasette`). This also means tools that shell out to external binaries (like `datasette publish fly` needing `flyctl`) won't work inside the container.
 
 ## Running & Development
 
@@ -259,6 +260,9 @@ db["hts_entries"].enable_fts(["description"], fts_version="fts5")
 
 ### Deploying to Fly.io
 
+**CI (recommended):** The `deploy-datasette.yml` workflow handles the full pipeline — ingest, chapter title enrichment, FTS rebuild, and deploy. Trigger it manually via `workflow_dispatch`. Data prep steps run inside Docker (volume-mounted to the runner), but the deploy step runs directly on the runner because `datasette publish fly` requires `flyctl`, which isn't in the Docker image.
+
+**Manual deployment:**
 ```bash
 # 1. Update chapter titles and rebuild FTS
 python3 scripts/chapter_titles.py data/hts.db
