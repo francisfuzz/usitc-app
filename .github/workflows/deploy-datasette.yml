@@ -38,7 +38,7 @@ jobs:
             -e FLY_API_TOKEN="$FLY_API_TOKEN" \
             -v "$(pwd)/data:/app/data" \
             hts-local \
-            datasette publish fly \
+            -m datasette publish fly \
             data/hts.db \
             --app="tariff-everywhere" \
             --metadata metadata.json \
