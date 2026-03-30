@@ -9,4 +9,4 @@ datasette-render-html~=1.0
 sqlite-utils~=3.39
 pytest~=9.0.2
 pytest-cov~=6.0.0
-ruff~=0.15.7
+ruff~=0.15.8
