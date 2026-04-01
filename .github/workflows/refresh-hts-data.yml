@@ -1,9 +1,10 @@
 name: Refresh HTS Data
 
 on:
-  schedule:
+  # todo: come back to this later, trigger on demand for now
+  # schedule:
     # Once daily at 00:12 UTC
-    - cron: '12 0 * * *'
+    # - cron: '12 0 * * *'
   workflow_dispatch:
 
 permissions:
